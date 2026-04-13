@@ -1,24 +1,20 @@
-//
-//  ContentView.swift
-//  texteenu
-//
-//  Created by Gonzalo Minuto on 4/12/26.
-//
-
 import SwiftUI
 
 struct ContentView: View {
-    var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
-        }
-        .padding()
-    }
-}
+    @StateObject private var viewModel: AppViewModel
 
-#Preview {
-    ContentView()
+    init(viewModel: @autoclosure @escaping () -> AppViewModel) {
+        _viewModel = StateObject(wrappedValue: viewModel())
+    }
+
+    var body: some View {
+        NavigationStack {
+            switch viewModel.screen {
+            case .recording:
+                RecordingView(viewModel: viewModel)
+            case .reading:
+                ReadingView(viewModel: viewModel)
+            }
+        }
+    }
 }
