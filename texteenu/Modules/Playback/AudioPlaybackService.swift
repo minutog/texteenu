@@ -2,10 +2,17 @@ import AVFoundation
 import Foundation
 
 @MainActor
-protocol AudioPlaybackService: AnyObject {
+protocol PlaybackTimeSource: AnyObject {
+    var currentPlaybackTime: TimeInterval { get }
+    var hasStartedPlayback: Bool { get }
+    var isPlaybackRunning: Bool { get }
+}
+
+@MainActor
+protocol AudioPlaybackService: PlaybackTimeSource {
     var isPlaying: Bool { get }
 
-    func playAudio(from fileURL: URL, muted: Bool) throws
+    func playAudio(from fileURL: URL, muted: Bool, after delay: TimeInterval) throws
     func setMuted(_ muted: Bool)
     func stop()
 }
@@ -25,12 +32,27 @@ enum AudioPlaybackError: LocalizedError {
 final class AVAudioPlaybackService: NSObject, AudioPlaybackService {
     private let audioSession = AVAudioSession.sharedInstance()
     private var player: AVAudioPlayer?
+    private var scheduledStartDeviceTime: TimeInterval?
 
     var isPlaying: Bool {
         player?.isPlaying ?? false
     }
 
-    func playAudio(from fileURL: URL, muted: Bool) throws {
+    var currentPlaybackTime: TimeInterval {
+        player?.currentTime ?? 0
+    }
+
+    var hasStartedPlayback: Bool {
+        guard let player else { return false }
+        guard let scheduledStartDeviceTime else { return player.isPlaying }
+        return player.deviceCurrentTime >= scheduledStartDeviceTime
+    }
+
+    var isPlaybackRunning: Bool {
+        player?.isPlaying ?? false
+    }
+
+    func playAudio(from fileURL: URL, muted: Bool, after delay: TimeInterval) throws {
         stop()
 
         try audioSession.setCategory(.playback, mode: .default, options: [.duckOthers])
@@ -41,7 +63,16 @@ final class AVAudioPlaybackService: NSObject, AudioPlaybackService {
         player.volume = muted ? 0 : 1
         player.prepareToPlay()
 
-        guard player.play() else {
+        let scheduledDelay = max(delay, 0)
+        let startDeviceTime = player.deviceCurrentTime + scheduledDelay
+        scheduledStartDeviceTime = startDeviceTime
+
+        let didStart = scheduledDelay > 0
+            ? player.play(atTime: startDeviceTime)
+            : player.play()
+
+        guard didStart else {
+            scheduledStartDeviceTime = nil
             throw AudioPlaybackError.playerUnavailable
         }
 
@@ -55,6 +86,7 @@ final class AVAudioPlaybackService: NSObject, AudioPlaybackService {
     func stop() {
         player?.stop()
         player = nil
+        scheduledStartDeviceTime = nil
 
         do {
             try audioSession.setActive(false, options: .notifyOthersOnDeactivation)

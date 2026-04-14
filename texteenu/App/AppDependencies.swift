@@ -7,7 +7,6 @@ struct AppDependencies {
     let playbackEngine: any PlaybackEngine
     let audioPlaybackService: any AudioPlaybackService
     let visualMapping: any VisualMappingService
-    let hapticMapping: any HapticMappingService
     let hapticService: any HapticService
 
     static func live() -> AppDependencies {
@@ -25,8 +24,7 @@ struct AppDependencies {
             playbackEngine: TimedWordPlaybackEngine(),
             audioPlaybackService: AVAudioPlaybackService(),
             visualMapping: EmotionOpacityVisualMapper(),
-            hapticMapping: ImportancePulseHapticMapper(minimumIntensity: 0.45),
-            hapticService: ImpactHapticService()
+            hapticService: ContinuousEnvelopeHapticService()
         )
     }
 }

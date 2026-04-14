@@ -3,6 +3,10 @@ import SwiftUI
 
 @MainActor
 final class AppViewModel: ObservableObject {
+    private enum PlaybackSynchronization {
+        static let leadTime: TimeInterval = 0.1
+    }
+
     enum Screen {
         case recording
         case reading
@@ -46,7 +50,6 @@ final class AppViewModel: ObservableObject {
     private let playbackEngine: any PlaybackEngine
     private let audioPlaybackService: any AudioPlaybackService
     private let visualMapping: any VisualMappingService
-    private let hapticMapping: any HapticMappingService
     private let hapticService: any HapticService
 
     init(dependencies: AppDependencies) {
@@ -56,19 +59,12 @@ final class AppViewModel: ObservableObject {
         playbackEngine = dependencies.playbackEngine
         audioPlaybackService = dependencies.audioPlaybackService
         visualMapping = dependencies.visualMapping
-        hapticMapping = dependencies.hapticMapping
         hapticService = dependencies.hapticService
 
         playbackEngine.onSnapshotChange = { [weak self] snapshot in
             guard let self else { return }
             self.playbackState = snapshot.state
             self.visibleTokens = snapshot.visibleTokens
-        }
-
-        playbackEngine.onWordReveal = { [weak self] token in
-            guard let self else { return }
-            let instruction = self.hapticMapping.instruction(for: token.importanceIntensity)
-            self.hapticService.play(instruction)
         }
     }
 
@@ -169,6 +165,7 @@ final class AppViewModel: ObservableObject {
 
                 self.processingState = .analyzing
                 let analyzedTokens = try await self.analysisService.analyze(audioFileAt: recordedFileURL, transcription: transcription)
+                await self.hapticService.prepareSpeechHaptics(for: recordedFileURL)
 
                 self.analyzedTokens = analyzedTokens
                 self.processingState = .idle
@@ -209,6 +206,7 @@ final class AppViewModel: ObservableObject {
     }
 
     private func resetPlayback() {
+        hapticService.stop()
         audioPlaybackService.stop()
         playbackEngine.stop()
         visibleTokens = []
@@ -236,13 +234,18 @@ final class AppViewModel: ObservableObject {
 
         if let recordedFileURL {
             do {
-                try audioPlaybackService.playAudio(from: recordedFileURL, muted: isAudioMuted)
+                let leadTime = PlaybackSynchronization.leadTime
+                let hapticDelay = leadTime - 0.5 // 200ms after audio
+                try audioPlaybackService.playAudio(from: recordedFileURL, muted: isAudioMuted, after: leadTime)
+                hapticService.startSpeechHaptics(after: hapticDelay)
             } catch {
+                hapticService.stop()
                 present(error)
+                return
             }
         }
 
-        playbackEngine.start()
+        playbackEngine.start(synchronizedTo: audioPlaybackService)
     }
 
     private func present(_ error: Error) {
