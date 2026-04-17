@@ -3,6 +3,11 @@ import SwiftUI
 
 @MainActor
 final class AppViewModel: ObservableObject {
+    private struct PlaybackTextSegment {
+        let text: String
+        let distanceFromCurrent: Int
+    }
+
     enum Section {
         case menu
         case recorder
@@ -159,20 +164,16 @@ final class AppViewModel: ObservableObject {
     }
 
     var visibleAttributedText: AttributedString {
+        let segments = punctuatedVisiblePlaybackSegments()
+            ?? fallbackVisiblePlaybackSegments()
+
         var output = AttributedString()
 
-        for index in visibleTokens.indices {
-            let token = visibleTokens[index]
-            let distanceFromCurrent = (visibleTokens.count - 1) - index
-            let style = visualMapping.style(forDistanceFromCurrent: distanceFromCurrent)
-
-            var fragment = AttributedString(token.text)
+        for segment in segments {
+            let style = visualMapping.style(forDistanceFromCurrent: segment.distanceFromCurrent)
+            var fragment = AttributedString(segment.text)
             fragment.foregroundColor = .primary.opacity(style.opacity)
             output.append(fragment)
-
-            if index < visibleTokens.count - 1 {
-                output.append(AttributedString(" "))
-            }
         }
 
         return output
@@ -653,6 +654,83 @@ final class AppViewModel: ObservableObject {
         var merged = fetchedRecordings.filter { $0.id != savedRecording.id }
         merged.insert(savedRecording, at: 0)
         return merged.sorted { $0.createdAt > $1.createdAt }
+    }
+
+    private func punctuatedVisiblePlaybackSegments() -> [PlaybackTextSegment]? {
+        guard !visibleTokens.isEmpty else { return [] }
+
+        let transcriptText = activePlaybackTranscriptText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcriptText.isEmpty else { return nil }
+
+        let transcriptWordRanges = wordRanges(in: transcriptText)
+        guard transcriptWordRanges.count >= visibleTokens.count else { return nil }
+
+        for index in visibleTokens.indices {
+            let transcriptWord = String(transcriptText[transcriptWordRanges[index]])
+            guard normalizedWord(transcriptWord) == normalizedWord(visibleTokens[index].text) else {
+                return nil
+            }
+        }
+
+        var segments: [PlaybackTextSegment] = []
+        segments.reserveCapacity(visibleTokens.count)
+
+        for index in visibleTokens.indices {
+            let segmentStart = index == 0
+                ? transcriptText.startIndex
+                : transcriptWordRanges[index].lowerBound
+            let segmentEnd = index + 1 < transcriptWordRanges.count
+                ? transcriptWordRanges[index + 1].lowerBound
+                : transcriptText.endIndex
+            let distanceFromCurrent = (visibleTokens.count - 1) - index
+            let segmentText = String(transcriptText[segmentStart..<segmentEnd])
+
+            segments.append(
+                PlaybackTextSegment(
+                    text: segmentText,
+                    distanceFromCurrent: distanceFromCurrent
+                )
+            )
+        }
+
+        return segments
+    }
+
+    private func fallbackVisiblePlaybackSegments() -> [PlaybackTextSegment] {
+        visibleTokens.indices.map { index in
+            let token = visibleTokens[index]
+            let separator = index < visibleTokens.count - 1 ? " " : ""
+
+            return PlaybackTextSegment(
+                text: token.text + separator,
+                distanceFromCurrent: (visibleTokens.count - 1) - index
+            )
+        }
+    }
+
+    private var activePlaybackTranscriptText: String {
+        switch section {
+        case .player:
+            return selectedPlaybackRecording?.transcriptionText ?? ""
+        case .menu, .recorder:
+            return lastSavedRecording?.transcriptionText ?? transcriptionText
+        }
+    }
+
+    private func wordRanges(in text: String) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        text.enumerateSubstrings(in: text.startIndex..<text.endIndex, options: [.byWords, .substringNotRequired]) { _, range, _, _ in
+            ranges.append(range)
+        }
+        return ranges
+    }
+
+    private func normalizedWord(_ text: String) -> String {
+        let folded = text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        return folded.unicodeScalars
+            .filter(CharacterSet.alphanumerics.contains)
+            .map(String.init)
+            .joined()
     }
 
     private func present(_ error: Error) {

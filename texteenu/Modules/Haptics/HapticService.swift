@@ -12,9 +12,6 @@ protocol HapticService: AnyObject {
 @MainActor
 final class ContinuousEnvelopeHapticService: HapticService {
     private enum Constants {
-        static let frameDuration: TimeInterval = 0.02
-        static let smoothingAlpha: Float = 0.55
-        static let silenceThreshold: Float = 0.045
         static let durationPadding: TimeInterval = 0.15
         static let sharpness: Float = 0.32
     }
@@ -172,8 +169,9 @@ final class ContinuousEnvelopeHapticService: HapticService {
 
     nonisolated private static func buildEnvelopeProfile(from audioFileURL: URL) throws -> EnvelopeProfile {
         let frameDuration = 0.02
-        let smoothingAlpha: Float = 0.55
-        let silenceThreshold: Float = 0.045
+        let smoothingAlpha: Float = 0.3
+        let silenceThreshold: Float = 0.01
+        let dynamicRangeBoost: Float = 1.2
 
         let audioFile = try AVAudioFile(forReading: audioFileURL)
         let audioFormat = audioFile.processingFormat
@@ -233,14 +231,16 @@ final class ContinuousEnvelopeHapticService: HapticService {
             }
 
             let smoothed = smoothedIntensity + (smoothingAlpha * (gatedIntensity - smoothedIntensity))
-            let shapedIntensity = Float(pow(Double(max(smoothed, 0)), 0.85))
+            let shapedIntensity = Float(pow(Double(max(smoothed, 0)), 0.6))
             let finalIntensity = shapedIntensity < silenceThreshold ? 0 : shapedIntensity
+            let clampedIntensity = clampToUnitInterval(finalIntensity)
+            let boostedIntensity = clampToUnitInterval(clampedIntensity * dynamicRangeBoost)
 
             smoothedIntensity = finalIntensity == 0 ? 0 : smoothed
             points.append(
                 EnvelopePoint(
                     time: TimeInterval(index) * frameDuration,
-                    intensity: clampToUnitInterval(finalIntensity)
+                    intensity: boostedIntensity
                 )
             )
         }

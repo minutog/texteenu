@@ -16,6 +16,19 @@ enum AudioTranscriptionError: LocalizedError {
 }
 
 struct OpenAITranscriptionService: AudioTranscriptionService {
+    private static let defaultTranscriptionPrompt = """
+    Transcribe the audio strictly in English. Always output in English, regardless of the input language.
+    Preserve the exact spoken words verbatim. Do not paraphrase, summarize, translate meaning, or rewrite in any way.
+    Include all disfluencies and fillers such as "um", "uh", repetitions, and self-corrections exactly as spoken.
+    Add punctuation only when clearly supported by the audio:
+    - Use periods to separate sentences
+    - Use commas for natural pauses within sentences
+    - Use ellipses (...) to represent noticeable pauses
+    - Use extra letters inside of a word if a word is exagerated or elongated more than usual
+    Preserve the original wording exactly while improving readability only through punctuation and paragraph breaks. Do not remove or alter any words.
+    Return only the transcript.
+    """
+
     let apiClient: OpenAIAPIClient
 
     func transcribeAudio(at fileURL: URL) async throws -> TranscriptionResult {
@@ -27,6 +40,7 @@ struct OpenAITranscriptionService: AudioTranscriptionService {
         multipartBody.addTextField(named: "model", value: configuration.transcriptionModel)
         multipartBody.addTextField(named: "response_format", value: "verbose_json")
         multipartBody.addTextField(named: "timestamp_granularities[]", value: "word")
+        multipartBody.addTextField(named: "prompt", value: Self.defaultTranscriptionPrompt)
         multipartBody.addFileField(
             named: "file",
             filename: fileURL.lastPathComponent,

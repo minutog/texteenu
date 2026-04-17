@@ -1,39 +1,56 @@
 import SwiftUI
 
 struct MainMenuView: View {
+    private let buttonSpacing: CGFloat = 18
+    private let buttonCornerRadius: CGFloat = 126
+
     @ObservedObject var viewModel: AppViewModel
 
     var body: some View {
-        VStack {
-            Spacer()
+        GeometryReader { geometry in
+            let buttonHeight = max(
+                (geometry.size.height - buttonSpacing) / 2,
+                0
+            )
 
-            VStack(spacing: 18) {
-                Button {
+            VStack(spacing: buttonSpacing) {
+                menuButton("Recorder") {
                     viewModel.openRecorder()
-                } label: {
-                    menuButtonLabel("Recorder")
                 }
-                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+                .frame(height: buttonHeight)
 
-                Button {
+                menuButton("Player") {
                     viewModel.openPlayer()
-                } label: {
-                    menuButtonLabel("Player")
                 }
-                .buttonStyle(.borderedProminent)
+                .frame(maxWidth: .infinity)
+                .frame(height: buttonHeight)
             }
-            .frame(maxWidth: .infinity)
-
-            Spacer()
+            .padding(.horizontal, buttonSpacing)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(24)
-        .navigationTitle("Menu")
+        .toolbar(.hidden, for: .navigationBar)
     }
 
-    private func menuButtonLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.title2.weight(.semibold))
-            .frame(maxWidth: .infinity)
-            .frame(minHeight: 168)
+    private func menuButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.largeTitle.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(
+                    LinearGradient(
+                        colors: [
+                            Color.accentColor.opacity(0.92),
+                            Color.accentColor
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        }
+        .buttonStyle(.plain)
+        .clipShape(RoundedRectangle(cornerRadius: buttonCornerRadius, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: buttonCornerRadius, style: .continuous))
     }
 }
