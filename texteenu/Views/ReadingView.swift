@@ -39,6 +39,15 @@ struct ReadingView: View {
         }
         .navigationTitle("Reading")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Button {
+                    viewModel.openMenu()
+                } label: {
+                    Image(systemName: "line.3.horizontal")
+                }
+                .accessibilityLabel("Open menu")
+            }
+
             ToolbarItem(placement: .topBarTrailing) {
                 Button {
                     viewModel.toggleAudioMuted()

@@ -5,19 +5,21 @@ struct WordVisualStyle: Equatable {
 }
 
 protocol VisualMappingService {
-    func style(for emotionIntensity: Double) -> WordVisualStyle
+    func style(forDistanceFromCurrent distanceFromCurrent: Int) -> WordVisualStyle
 }
 
-struct EmotionOpacityVisualMapper: VisualMappingService {
+struct PlaybackTrailOpacityVisualMapper: VisualMappingService {
     let minimumOpacity: Double
+    let decayFactor: Double
 
-    init(minimumOpacity: Double = 0.25) {
+    init(minimumOpacity: Double = 0.24, decayFactor: Double = 0.78) {
         self.minimumOpacity = minimumOpacity
+        self.decayFactor = decayFactor
     }
 
-    func style(for emotionIntensity: Double) -> WordVisualStyle {
-        let clampedEmotion = emotionIntensity.clampedToUnitInterval
-        let opacity = minimumOpacity + ((1 - minimumOpacity) * clampedEmotion)
+    func style(forDistanceFromCurrent distanceFromCurrent: Int) -> WordVisualStyle {
+        let sanitizedDistance = max(distanceFromCurrent, 0)
+        let opacity = max(minimumOpacity, pow(decayFactor, Double(sanitizedDistance)))
         return WordVisualStyle(opacity: opacity)
     }
 }

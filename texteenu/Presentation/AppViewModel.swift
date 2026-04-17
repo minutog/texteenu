@@ -3,19 +3,16 @@ import SwiftUI
 
 @MainActor
 final class AppViewModel: ObservableObject {
-    private enum PlaybackSynchronization {
-        static let leadTime: TimeInterval = 0.1
-    }
-
-    enum Screen {
-        case recording
-        case reading
+    enum Section {
+        case menu
+        case recorder
+        case player
     }
 
     enum ProcessingState: Equatable {
         case idle
         case transcribing
-        case analyzing
+        case saving
 
         var isRunning: Bool {
             self != .idle
@@ -27,37 +24,68 @@ final class AppViewModel: ObservableObject {
                 return nil
             case .transcribing:
                 return "Transcribing audio..."
-            case .analyzing:
-                return "Analyzing prosody and word importance..."
+            case .saving:
+                return "Saving processed audio..."
             }
         }
     }
 
-    @Published private(set) var screen: Screen = .recording
+    enum PlayerMode: String, CaseIterable, Identifiable {
+        case text = "Text"
+        case audio = "Audio"
+        case chattern = "Chattern"
+        case all = "All"
+
+        var id: String { rawValue }
+
+        var showsAnimatedText: Bool {
+            self == .chattern || self == .all
+        }
+
+        var playsAudio: Bool {
+            self == .audio || self == .all
+        }
+
+        var playsHaptics: Bool {
+            self == .chattern || self == .all
+        }
+    }
+
+    @Published private(set) var section: Section = .menu
     @Published private(set) var isRecording = false
     @Published private(set) var processingState: ProcessingState = .idle
-    @Published private(set) var recordedFileURL: URL?
+    @Published private(set) var draftRecordingURL: URL?
+    @Published var draftTitle = ""
     @Published private(set) var transcriptionText = ""
-    @Published private(set) var analyzedTokens: [WordToken] = []
     @Published private(set) var visibleTokens: [WordToken] = []
     @Published private(set) var playbackState: PlaybackState = .idle
     @Published private(set) var isAudioMuted = false
+    @Published private(set) var savedRecordings: [SavedRecording] = []
+    @Published private(set) var lastSavedRecording: SavedRecording?
+    @Published private(set) var selectedPlaybackRecording: SavedRecording?
+    @Published private(set) var selectedPlayerMode: PlayerMode = .all
+    @Published private(set) var playerShowsPlainText = false
+    @Published private(set) var playerHasPlayedSelection = false
+    @Published private(set) var isPreparingPlayerPlayback = false
+    @Published private(set) var showsPostSaveActions = false
     @Published var errorMessage: String?
 
     private let recordingService: any AudioRecordingService
     private let transcriptionService: any AudioTranscriptionService
-    private let analysisService: any AudioAnalysisService
+    private let savedRecordingStore: any SavedRecordingStore
     private let playbackEngine: any PlaybackEngine
     private let audioPlaybackService: any AudioPlaybackService
+    private let timelinePlaybackService: any TimelinePlaybackService
     private let visualMapping: any VisualMappingService
     private let hapticService: any HapticService
 
     init(dependencies: AppDependencies) {
         recordingService = dependencies.recordingService
         transcriptionService = dependencies.transcriptionService
-        analysisService = dependencies.analysisService
+        savedRecordingStore = dependencies.savedRecordingStore
         playbackEngine = dependencies.playbackEngine
         audioPlaybackService = dependencies.audioPlaybackService
+        timelinePlaybackService = dependencies.timelinePlaybackService
         visualMapping = dependencies.visualMapping
         hapticService = dependencies.hapticService
 
@@ -66,6 +94,8 @@ final class AppViewModel: ObservableObject {
             self.playbackState = snapshot.state
             self.visibleTokens = snapshot.visibleTokens
         }
+
+        loadSavedRecordings()
     }
 
     var canStartRecording: Bool {
@@ -76,16 +106,36 @@ final class AppViewModel: ObservableObject {
         isRecording
     }
 
-    var canProcessRecording: Bool {
-        recordedFileURL != nil && !isRecording && !processingState.isRunning
-    }
-
-    var canCancelRecording: Bool {
-        recordedFileURL != nil && !isRecording && !processingState.isRunning
+    var canSaveAndProcess: Bool {
+        hasRecordedDraft && !processingState.isRunning
     }
 
     var canReplay: Bool {
-        !analyzedTokens.isEmpty && !processingState.isRunning
+        canStartPlayerPlayback
+    }
+
+    var hasRecordedDraft: Bool {
+        draftRecordingURL != nil && !isRecording
+    }
+
+    var shouldShowTitleField: Bool {
+        hasRecordedDraft
+    }
+
+    var shouldShowPostSaveActions: Bool {
+        showsPostSaveActions && !isRecording && !processingState.isRunning && lastSavedRecording != nil
+    }
+
+    var recordButtonTitle: String {
+        if hasRecordedDraft {
+            return "Record Again"
+        }
+
+        if lastSavedRecording != nil {
+            return "Record New"
+        }
+
+        return "Record"
     }
 
     var audioToggleIconName: String {
@@ -97,11 +147,15 @@ final class AppViewModel: ObservableObject {
             return "Recording in progress..."
         }
 
-        if let recordedFileURL {
-            return "Recorded file ready: \(recordedFileURL.lastPathComponent)"
+        if hasRecordedDraft {
+            return "Add a title and save it into the app."
         }
 
-        return "Capture a short audio message, then process it."
+        if let lastSavedRecording, shouldShowPostSaveActions {
+            return lastSavedRecording.title
+        }
+
+        return "Capture a short audio message, add a title, and save it into the app."
     }
 
     var visibleAttributedText: AttributedString {
@@ -109,7 +163,8 @@ final class AppViewModel: ObservableObject {
 
         for index in visibleTokens.indices {
             let token = visibleTokens[index]
-            let style = visualMapping.style(for: token.emotionIntensity)
+            let distanceFromCurrent = (visibleTokens.count - 1) - index
+            let style = visualMapping.style(forDistanceFromCurrent: distanceFromCurrent)
 
             var fragment = AttributedString(token.text)
             fragment.foregroundColor = .primary.opacity(style.opacity)
@@ -123,14 +178,146 @@ final class AppViewModel: ObservableObject {
         return output
     }
 
+    var lastSavedTitle: String? {
+        shouldShowPostSaveActions ? lastSavedRecording?.title : nil
+    }
+
+    var playerModes: [PlayerMode] {
+        PlayerMode.allCases
+    }
+
+    var hasPlayerSelection: Bool {
+        selectedPlaybackRecording != nil
+    }
+
+    var playerAvailableRecordings: [SavedRecording] {
+        if !savedRecordings.isEmpty {
+            if let selectedPlaybackRecording,
+               !savedRecordings.contains(where: { $0.id == selectedPlaybackRecording.id }) {
+                return [selectedPlaybackRecording] + savedRecordings
+            }
+            return savedRecordings
+        }
+
+        if let selectedPlaybackRecording {
+            return [selectedPlaybackRecording]
+        }
+
+        return []
+    }
+
+    var playerSelectedTitle: String? {
+        selectedPlaybackRecording?.title
+    }
+
+    var playerSelectedTranscriptText: String {
+        selectedPlaybackRecording?.transcriptionText ?? ""
+    }
+
+    var canStartPlayerPlayback: Bool {
+        selectedPlaybackRecording != nil && !processingState.isRunning && !isPreparingPlayerPlayback && playbackState != .playing
+    }
+
+    var canChangePlayerMode: Bool {
+        !isPreparingPlayerPlayback && playbackState != .playing
+    }
+
+    var playerActionTitle: String {
+        if isPreparingPlayerPlayback {
+            return "Loading..."
+        }
+
+        if playbackState == .playing {
+            return "Playing..."
+        }
+
+        return playerHasPlayedSelection ? "Replay" : "Play"
+    }
+
+    var playerStatusText: String {
+        guard selectedPlaybackRecording != nil else {
+            return savedRecordings.isEmpty
+                ? "No saved messages yet."
+                : "Select a saved message from Files."
+        }
+
+        if isPreparingPlayerPlayback {
+            return "Preparing playback..."
+        }
+
+        switch selectedPlayerMode {
+        case .text:
+            return playerShowsPlainText ? "Showing the full message text." : "Press Play to show the full message."
+        case .audio:
+            return playbackState == .playing ? "Playing audio only." : "Press Play to hear the message."
+        case .chattern:
+            return playbackState == .playing
+                ? "Playing animated text with haptics."
+                : "Press Play for text animation and haptics."
+        case .all:
+            return playbackState == .playing
+                ? "Playing text, haptics, and audio."
+                : "Press Play for the full message."
+        }
+    }
+
+    var shouldShowPlayerPlainText: Bool {
+        selectedPlayerMode == .text && playerShowsPlainText
+    }
+
+    var shouldShowPlayerAnimatedText: Bool {
+        selectedPlayerMode.showsAnimatedText
+    }
+
+    func isSelectedPlaybackRecording(_ recording: SavedRecording) -> Bool {
+        selectedPlaybackRecording?.id == recording.id
+    }
+
+    func openMenu() {
+        if isRecording {
+            stopRecording()
+        }
+        stopPlayback()
+        section = .menu
+    }
+
+    func openRecorder() {
+        section = .recorder
+    }
+
+    func openPlayer() {
+        if isRecording {
+            stopRecording()
+        }
+
+        stopPlayback()
+        refreshPlayerFiles()
+        if selectedPlaybackRecording == nil {
+            selectedPlaybackRecording = playerAvailableRecordings.first
+        }
+        section = .player
+    }
+
+    func refreshPlayerFiles() {
+        loadSavedRecordings()
+        if selectedPlaybackRecording == nil {
+            selectedPlaybackRecording = playerAvailableRecordings.first
+        }
+    }
+
     func startRecording() {
+        errorMessage = nil
         processingState = .idle
-        discardCurrentRecording(deleteAudioFile: true)
+        showsPostSaveActions = false
+        clearCurrentDraft(deleteAudioFile: true)
+        clearProcessedPreview()
+        stopPlayback()
+        section = .recorder
 
         Task {
             do {
                 try await self.recordingService.startRecording()
-                self.recordedFileURL = self.recordingService.outputFileURL
+                self.draftRecordingURL = self.recordingService.outputFileURL
                 self.isRecording = true
             } catch {
                 self.present(error)
@@ -140,37 +327,58 @@ final class AppViewModel: ObservableObject {
 
     func stopRecording() {
         do {
-            recordedFileURL = try recordingService.stopRecording()
+            draftRecordingURL = try recordingService.stopRecording()
+            draftTitle = makeDefaultRecordingTitle()
             isRecording = false
+            errorMessage = nil
         } catch {
             present(error)
         }
     }
 
-    func cancelRecording() {
-        guard canCancelRecording else { return }
-        discardCurrentRecording(deleteAudioFile: true)
-    }
-
-    func processRecording() {
-        guard let recordedFileURL else { return }
+    func saveAndProcessRecording() {
+        guard let draftRecordingURL else { return }
 
         errorMessage = nil
         processingState = .transcribing
 
+        let proposedTitle = resolvedDraftTitle()
+
         Task {
             do {
-                let transcription = try await self.transcriptionService.transcribeAudio(at: recordedFileURL)
+                let transcription = try await self.transcriptionService.transcribeAudio(at: draftRecordingURL)
                 self.transcriptionText = transcription.fullText
 
-                self.processingState = .analyzing
-                let analyzedTokens = try await self.analysisService.analyze(audioFileAt: recordedFileURL, transcription: transcription)
-                await self.hapticService.prepareSpeechHaptics(for: recordedFileURL)
+                let tokens = transcription.words.map {
+                    WordToken(
+                        text: $0.text,
+                        startTime: $0.startTime,
+                        endTime: $0.endTime
+                    )
+                }
 
-                self.analyzedTokens = analyzedTokens
+                self.processingState = .saving
+                let savedRecording = try self.savedRecordingStore.saveRecording(
+                    title: proposedTitle,
+                    from: draftRecordingURL,
+                    transcriptionText: transcription.fullText,
+                    tokens: tokens
+                )
+                let savedAudioURL = try self.savedRecordingStore.audioFileURL(for: savedRecording)
+                await self.hapticService.prepareSpeechHaptics(for: savedAudioURL)
+
+                self.deleteFileIfNeeded(at: draftRecordingURL)
+                let fetchedRecordings = (try? self.savedRecordingStore.fetchAll()) ?? []
+                self.savedRecordings = self.mergedRecordings(including: savedRecording, preferredOrder: fetchedRecordings)
+                self.lastSavedRecording = savedRecording
+                self.selectedPlaybackRecording = savedRecording
+                self.draftRecordingURL = nil
+                self.draftTitle = ""
                 self.processingState = .idle
-                self.screen = .reading
-                self.startPlayback()
+                self.showsPostSaveActions = true
+                self.playerHasPlayedSelection = false
+                self.playerShowsPlainText = false
+                self.section = .recorder
             } catch {
                 self.processingState = .idle
                 self.present(error)
@@ -178,9 +386,147 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    func deleteLastSavedAudio() {
+        let recordingToDelete = savedRecordings.first ?? lastSavedRecording
+        guard let recordingToDelete else {
+            savedRecordings = []
+            lastSavedRecording = nil
+            clearProcessedPreview()
+            showsPostSaveActions = false
+            errorMessage = nil
+            return
+        }
+
+        deleteRecording(id: recordingToDelete.id)
+        clearProcessedPreview()
+        showsPostSaveActions = false
+    }
+
+    func deleteRecording(id: UUID) {
+        do {
+            let deletedWasSelected = selectedPlaybackRecording?.id == id
+            let deletedWasLastSaved = lastSavedRecording?.id == id
+
+            if deletedWasSelected {
+                stopPlayback()
+                resetPlayerPresentation()
+                playerHasPlayedSelection = false
+            }
+
+            try savedRecordingStore.deleteRecording(id: id)
+            savedRecordings = try savedRecordingStore.fetchAll()
+
+            if deletedWasLastSaved {
+                lastSavedRecording = savedRecordings.first
+            } else if let currentLastSaved = lastSavedRecording {
+                lastSavedRecording = savedRecordings.first(where: { $0.id == currentLastSaved.id }) ?? savedRecordings.first
+            }
+
+            if deletedWasSelected {
+                selectedPlaybackRecording = savedRecordings.first
+            } else if let selectedPlaybackRecording {
+                self.selectedPlaybackRecording = savedRecordings.first(where: { $0.id == selectedPlaybackRecording.id }) ?? savedRecordings.first
+            } else {
+                selectedPlaybackRecording = savedRecordings.first
+            }
+
+            if savedRecordings.isEmpty {
+                selectedPlaybackRecording = nil
+                if showsPostSaveActions {
+                    clearProcessedPreview()
+                    showsPostSaveActions = false
+                }
+            }
+
+            errorMessage = nil
+        } catch {
+            present(error)
+        }
+    }
+
+    func renameRecording(id: UUID, to newTitle: String) {
+        let trimmedTitle = newTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty else { return }
+
+        do {
+            let updatedRecording = try savedRecordingStore.updateRecordingTitle(id: id, title: trimmedTitle)
+            savedRecordings = try savedRecordingStore.fetchAll()
+
+            if lastSavedRecording?.id == id {
+                lastSavedRecording = updatedRecording
+            } else if let currentLastSaved = lastSavedRecording {
+                lastSavedRecording = savedRecordings.first(where: { $0.id == currentLastSaved.id }) ?? savedRecordings.first
+            }
+
+            if selectedPlaybackRecording?.id == id {
+                selectedPlaybackRecording = updatedRecording
+            } else if let selectedPlaybackRecording {
+                self.selectedPlaybackRecording = savedRecordings.first(where: { $0.id == selectedPlaybackRecording.id }) ?? savedRecordings.first
+            }
+
+            errorMessage = nil
+        } catch {
+            present(error)
+        }
+    }
+
+    func selectPlaybackRecording(_ recording: SavedRecording) {
+        stopPlayback()
+        resetPlayerPresentation()
+        selectedPlaybackRecording = recording
+        errorMessage = nil
+    }
+
+    func selectPlayerMode(_ mode: PlayerMode) {
+        guard canChangePlayerMode else { return }
+        guard selectedPlayerMode != mode else { return }
+
+        stopPlayback()
+        resetPlayerPresentation()
+        selectedPlayerMode = mode
+        playerHasPlayedSelection = false
+        errorMessage = nil
+    }
+
+    func playSelectedMessage() {
+        guard let recording = selectedPlaybackRecording else { return }
+
+        stopPlayback()
+        resetPlayerPresentation()
+        errorMessage = nil
+        playerHasPlayedSelection = true
+
+        let mode = selectedPlayerMode
+
+        if mode == .text {
+            playerShowsPlainText = true
+            playbackState = .finished
+            return
+        }
+
+        isPreparingPlayerPlayback = true
+
+        Task {
+            do {
+                let audioFileURL = try self.savedRecordingStore.audioFileURL(for: recording)
+                if mode.playsHaptics {
+                    await self.hapticService.prepareSpeechHaptics(for: audioFileURL)
+                }
+
+                await MainActor.run {
+                    self.beginPlayback(for: recording, audioFileURL: audioFileURL, mode: mode)
+                }
+            } catch {
+                await MainActor.run {
+                    self.isPreparingPlayerPlayback = false
+                    self.present(error)
+                }
+            }
+        }
+    }
+
     func replay() {
-        guard !analyzedTokens.isEmpty else { return }
-        startPlayback()
+        playSelectedMessage()
     }
 
     func toggleAudioMuted() {
@@ -189,7 +535,11 @@ final class AppViewModel: ObservableObject {
     }
 
     func startNewRecordingFlow() {
-        discardCurrentRecording(deleteAudioFile: true)
+        clearCurrentDraft(deleteAudioFile: true)
+        clearProcessedPreview()
+        showsPostSaveActions = false
+        stopPlayback()
+        section = .recorder
     }
 
     func playbackStatusText() -> String {
@@ -205,56 +555,114 @@ final class AppViewModel: ObservableObject {
         }
     }
 
-    private func resetPlayback() {
+    private func beginPlayback(for recording: SavedRecording, audioFileURL: URL, mode: PlayerMode) {
+        let tokens = recording.tokens
+        playbackEngine.load(tokens: tokens)
+
+        let leadTime = 0.1
+
+        do {
+            if mode.playsAudio {
+                try audioPlaybackService.playAudio(from: audioFileURL, muted: false, after: leadTime)
+            }
+
+            if mode.playsHaptics {
+                hapticService.startSpeechHaptics(after: leadTime)
+            }
+
+            if mode.playsAudio {
+                playbackEngine.start(synchronizedTo: audioPlaybackService)
+            } else {
+                let duration = max(tokens.last?.endTime ?? 0, 0.01)
+                timelinePlaybackService.start(duration: duration, after: leadTime)
+                playbackEngine.start(synchronizedTo: timelinePlaybackService)
+            }
+
+            isPreparingPlayerPlayback = false
+        } catch {
+            isPreparingPlayerPlayback = false
+            hapticService.stop()
+            present(error)
+        }
+    }
+
+    private func stopPlayback() {
+        isPreparingPlayerPlayback = false
         hapticService.stop()
         audioPlaybackService.stop()
+        timelinePlaybackService.stop()
         playbackEngine.stop()
         visibleTokens = []
         playbackState = .idle
-        screen = .recording
     }
 
-    private func discardCurrentRecording(deleteAudioFile: Bool) {
-        resetPlayback()
+    private func resetPlayerPresentation() {
+        playerShowsPlainText = false
+        visibleTokens = []
+    }
 
-        if deleteAudioFile, let recordedFileURL {
-            deleteFileIfNeeded(at: recordedFileURL)
+    private func clearCurrentDraft(deleteAudioFile: Bool) {
+        guard let draftRecordingURL else { return }
+
+        if deleteAudioFile {
+            deleteFileIfNeeded(at: draftRecordingURL)
         }
 
+        self.draftRecordingURL = nil
+        draftTitle = ""
         isRecording = false
-        recordedFileURL = nil
-        transcriptionText = ""
-        analyzedTokens = []
-        errorMessage = nil
-        screen = .recording
     }
 
-    private func startPlayback() {
-        playbackEngine.load(tokens: analyzedTokens)
+    private func clearProcessedPreview() {
+        transcriptionText = ""
+    }
 
-        if let recordedFileURL {
-            do {
-                let leadTime = PlaybackSynchronization.leadTime
-                let hapticDelay = leadTime - 0.5 // 200ms after audio
-                try audioPlaybackService.playAudio(from: recordedFileURL, muted: isAudioMuted, after: leadTime)
-                hapticService.startSpeechHaptics(after: hapticDelay)
-            } catch {
-                hapticService.stop()
-                present(error)
-                return
+    private func resolvedDraftTitle() -> String {
+        let trimmedTitle = draftTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmedTitle.isEmpty ? makeDefaultRecordingTitle() : trimmedTitle
+    }
+
+    private func makeDefaultRecordingTitle() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        return "audio-\(formatter.string(from: Date()))-\(UUID().uuidString.prefix(4))"
+    }
+
+    private func loadSavedRecordings() {
+        do {
+            savedRecordings = try savedRecordingStore.fetchAll()
+            lastSavedRecording = savedRecordings.first
+
+            if let selectedPlaybackRecording {
+                self.selectedPlaybackRecording = savedRecordings.first(where: { $0.id == selectedPlaybackRecording.id }) ?? savedRecordings.first
+            } else {
+                selectedPlaybackRecording = savedRecordings.first
+            }
+        } catch {
+            if savedRecordings.isEmpty, let lastSavedRecording {
+                savedRecordings = [lastSavedRecording]
+            }
+
+            if selectedPlaybackRecording == nil {
+                selectedPlaybackRecording = lastSavedRecording
             }
         }
+    }
 
-        playbackEngine.start(synchronizedTo: audioPlaybackService)
+    private func mergedRecordings(including savedRecording: SavedRecording, preferredOrder fetchedRecordings: [SavedRecording]) -> [SavedRecording] {
+        var merged = fetchedRecordings.filter { $0.id != savedRecording.id }
+        merged.insert(savedRecording, at: 0)
+        return merged.sorted { $0.createdAt > $1.createdAt }
     }
 
     private func present(_ error: Error) {
         errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         isRecording = false
+        isPreparingPlayerPlayback = false
     }
 
     private func deleteFileIfNeeded(at url: URL) {
-        guard FileManager.default.fileExists(atPath: url.path()) else { return }
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
         try? FileManager.default.removeItem(at: url)
     }
 }

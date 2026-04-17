@@ -91,8 +91,8 @@ final class TimedWordPlaybackEngine: PlaybackEngine {
             return
         }
 
-        if !timeSource.isPlaybackRunning && adjustedPlaybackTime >= loadedTokens[nextTokenIndex].startTime {
-            revealTokens(upTo: adjustedPlaybackTime)
+        if !timeSource.isPlaybackRunning {
+            finishPlayback()
         }
     }
 

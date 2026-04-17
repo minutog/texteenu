@@ -6,8 +6,13 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1A92EF382F8E9259003651F8 /* someday.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1A92EF372F8E9254003651F8 /* someday.plist */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1A92EECB2F8C5BCC003651F8 /* texteenu.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = texteenu.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A92EF372F8E9254003651F8 /* someday.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = someday.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -32,6 +37,7 @@
 		1A92EEC22F8C5BCC003651F8 = {
 			isa = PBXGroup;
 			children = (
+				1A92EF372F8E9254003651F8 /* someday.plist */,
 				1A92EECD2F8C5BCC003651F8 /* texteenu */,
 				1A92EECC2F8C5BCC003651F8 /* Products */,
 			);
@@ -109,6 +115,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1A92EF382F8E9259003651F8 /* someday.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -254,8 +261,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record short audio messages so the app can transcribe and play them back as animated text.";
-				INFOPLIST_KEY_OPENAI_ANALYSIS_MODEL = "gpt-audio-mini";
 				INFOPLIST_KEY_OPENAI_API_KEY = YOUR_OPENAI_API_KEY_HERE;
 				INFOPLIST_KEY_OPENAI_TRANSCRIPTION_MODEL = "whisper-1";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -302,8 +309,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Record short audio messages so the app can transcribe and play them back as animated text.";
-				INFOPLIST_KEY_OPENAI_ANALYSIS_MODEL = "gpt-audio-mini";
 				INFOPLIST_KEY_OPENAI_API_KEY = YOUR_OPENAI_API_KEY_HERE;
 				INFOPLIST_KEY_OPENAI_TRANSCRIPTION_MODEL = "whisper-1";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;

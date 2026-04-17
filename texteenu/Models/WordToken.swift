@@ -1,31 +1,25 @@
 import Foundation
 
-struct WordToken: Identifiable, Equatable, Sendable {
+struct WordToken: Identifiable, Equatable, Sendable, Codable {
     let id: UUID
     let text: String
     let startTime: TimeInterval
     let endTime: TimeInterval
-    let emotionIntensity: Double
-    let importanceIntensity: Double
 
     init(
         id: UUID = UUID(),
         text: String,
         startTime: TimeInterval,
-        endTime: TimeInterval,
-        emotionIntensity: Double,
-        importanceIntensity: Double
+        endTime: TimeInterval
     ) {
         self.id = id
         self.text = text
         self.startTime = startTime
         self.endTime = endTime
-        self.emotionIntensity = emotionIntensity.clampedToUnitInterval
-        self.importanceIntensity = importanceIntensity.clampedToUnitInterval
     }
 }
 
-struct TranscribedWord: Identifiable, Equatable, Sendable {
+struct TranscribedWord: Identifiable, Equatable, Sendable, Codable {
     let id: UUID
     let text: String
     let startTime: TimeInterval
@@ -39,7 +33,7 @@ struct TranscribedWord: Identifiable, Equatable, Sendable {
     }
 }
 
-struct TranscriptionResult: Equatable, Sendable {
+struct TranscriptionResult: Equatable, Sendable, Codable {
     let fullText: String
     let words: [TranscribedWord]
 }

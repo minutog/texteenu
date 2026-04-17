@@ -9,11 +9,13 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            switch viewModel.screen {
-            case .recording:
+            switch viewModel.section {
+            case .menu:
+                MainMenuView(viewModel: viewModel)
+            case .recorder:
                 RecordingView(viewModel: viewModel)
-            case .reading:
-                ReadingView(viewModel: viewModel)
+            case .player:
+                PlayerView(viewModel: viewModel)
             }
         }
     }

@@ -4,12 +4,10 @@ struct OpenAIConfiguration {
     static let defaultBaseURL = URL(string: "https://api.openai.com/")!
     static let placeholderAPIKey = "YOUR_OPENAI_API_KEY_HERE"
     static let defaultTranscriptionModel = "whisper-1"
-    static let defaultAnalysisModel = "gpt-audio-mini"
 
     let apiKey: String
     let baseURL: URL
     let transcriptionModel: String
-    let analysisModel: String
 }
 
 protocol OpenAIConfigurationProviding {
@@ -23,8 +21,6 @@ struct BundleOpenAIConfigurationProvider: OpenAIConfigurationProviding {
         let baseURLString = (Bundle.main.object(forInfoDictionaryKey: "OPENAI_BASE_URL") as? String)?.trimmedNonEmpty
         let transcriptionModel = (Bundle.main.object(forInfoDictionaryKey: "OPENAI_TRANSCRIPTION_MODEL") as? String)?.trimmedNonEmpty
             ?? OpenAIConfiguration.defaultTranscriptionModel
-        let analysisModel = (Bundle.main.object(forInfoDictionaryKey: "OPENAI_ANALYSIS_MODEL") as? String)?.trimmedNonEmpty
-            ?? OpenAIConfiguration.defaultAnalysisModel
 
         let candidateKey = environmentKey ?? infoDictionaryKey
 
@@ -37,8 +33,7 @@ struct BundleOpenAIConfigurationProvider: OpenAIConfigurationProviding {
         return OpenAIConfiguration(
             apiKey: apiKey,
             baseURL: baseURL,
-            transcriptionModel: transcriptionModel,
-            analysisModel: analysisModel
+            transcriptionModel: transcriptionModel
         )
     }
 }
