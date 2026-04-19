@@ -22,7 +22,7 @@ struct BundleOpenAIConfigurationProvider: OpenAIConfigurationProviding {
         let transcriptionModel = (Bundle.main.object(forInfoDictionaryKey: "OPENAI_TRANSCRIPTION_MODEL") as? String)?.trimmedNonEmpty
             ?? OpenAIConfiguration.defaultTranscriptionModel
 
-        let candidateKey = environmentKey ?? infoDictionaryKey
+        let candidateKey = infoDictionaryKey ?? environmentKey
 
         guard let apiKey = candidateKey, apiKey != OpenAIConfiguration.placeholderAPIKey, !apiKey.contains("$(") else {
             throw OpenAIConfigurationError.missingAPIKey
@@ -44,7 +44,7 @@ enum OpenAIConfigurationError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .missingAPIKey:
-            return "Set OPENAI_API_KEY in the app target settings or in your Xcode scheme environment variables before processing audio."
+            return "Set OPENAI_API_KEY in the app Info.plist settings or in your Xcode scheme environment variables before processing audio."
         }
     }
 }
