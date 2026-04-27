@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RecordingView: View {
     @ObservedObject var viewModel: AppViewModel
+    @State private var isFilesSheetPresented = false
 
     var body: some View {
         ScrollView {
@@ -53,6 +54,9 @@ struct RecordingView: View {
         }
         .safeAreaInset(edge: .bottom) {
             bottomActionBar
+        }
+        .sheet(isPresented: $isFilesSheetPresented) {
+            FilesSheetView(viewModel: viewModel)
         }
         .navigationTitle("Recorder")
         .toolbar {
@@ -111,6 +115,14 @@ struct RecordingView: View {
                 }
                 .buttonStyle(.borderedProminent)
             }
+
+            Button {
+                viewModel.refreshPlayerFiles()
+                isFilesSheetPresented = true
+            } label: {
+                buttonLabel("Files", minHeight: 48)
+            }
+            .buttonStyle(.bordered)
         }
         .padding(.horizontal, 24)
         .padding(.top, 16)
