@@ -90,11 +90,19 @@ struct ChatMessage: Identifiable, Equatable {
     let sender: ChatEndpoint
     let date: Date
     var content: MessageContent
+    var isVisibleToReceiver: Bool
 
-    init(id: UUID = UUID(), sender: ChatEndpoint, date: Date = Date(), content: MessageContent) {
+    init(
+        id: UUID = UUID(),
+        sender: ChatEndpoint,
+        date: Date = Date(),
+        content: MessageContent,
+        isVisibleToReceiver: Bool = true
+    ) {
         self.id = id
         self.sender = sender
         self.date = date
         self.content = content
+        self.isVisibleToReceiver = isVisibleToReceiver
     }
 }

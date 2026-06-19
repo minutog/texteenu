@@ -18,7 +18,8 @@ final class ChatStore: ObservableObject {
     func sendAudio(
         from sender: ChatEndpoint,
         recording: RecordedAudio,
-        transcription: HapTextTranscriptionResult? = nil
+        transcription: HapTextTranscriptionResult? = nil,
+        isVisibleToReceiver: Bool = true
     ) -> ChatMessage {
         let message = ChatMessage(
             sender: sender,
@@ -29,11 +30,28 @@ final class ChatStore: ObservableObject {
                     samples: recording.samples,
                     transcription: transcription
                 )
-            )
+            ),
+            isVisibleToReceiver: isVisibleToReceiver
         )
 
         messages.append(message)
         return message
+    }
+
+    func audioClip(for messageID: UUID) -> AudioClip? {
+        guard let message = messages.first(where: { $0.id == messageID }),
+              case .audio(let clip) = message.content else { return nil }
+
+        return clip
+    }
+
+    func deliverAudio(messageID: UUID, transcription: HapTextTranscriptionResult?) {
+        guard let index = messages.firstIndex(where: { $0.id == messageID }) else { return }
+        guard case .audio(var clip) = messages[index].content else { return }
+
+        clip.transcription = transcription
+        messages[index].content = .audio(clip)
+        messages[index].isVisibleToReceiver = true
     }
 
     func updateSurvey(for messageID: UUID, survey: AudioSurvey) {

@@ -37,7 +37,11 @@ struct ChatView: View {
     }
 
     private var messages: [ChatMessage] {
-        store.messages.sorted { $0.date < $1.date }
+        store.messages
+            .filter { message in
+                message.sender == activeViewer || message.isVisibleToReceiver
+            }
+            .sorted { $0.date < $1.date }
     }
 
     private var transcriptTop: CGFloat {
@@ -258,24 +262,17 @@ struct ChatView: View {
         do {
             let recording = try recorder.send()
 
-            Task {
-                let transcription = await hapTextPlayback.transcribeForDelivery(
-                    fileURL: recording.url,
-                    duration: recording.duration
+            let message = withAnimation(.hapMessageSpring) {
+                store.sendAudio(
+                    from: activeViewer,
+                    recording: recording,
+                    isVisibleToReceiver: false
                 )
+            }
 
-                let message = withAnimation(.hapMessageSpring) {
-                    store.sendAudio(
-                        from: activeViewer,
-                        recording: recording,
-                        transcription: transcription
-                    )
-                }
-
-                withAnimation(.easeInOut(duration: 0.18)) {
-                    customFeedbackAnswer = ""
-                    pendingFeedback = PendingFeedback(messageID: message.id, step: .sentiment)
-                }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                customFeedbackAnswer = ""
+                pendingFeedback = PendingFeedback(messageID: message.id, step: .sentiment)
             }
         } catch {
             recorder.errorMessage = error.localizedDescription
@@ -293,10 +290,25 @@ struct ChatView: View {
 
     private func completeFeedback(_ survey: AudioSurvey) {
         guard let pendingFeedback else { return }
+        let messageID = pendingFeedback.messageID
+        let clip = store.audioClip(for: messageID)
 
-        store.updateSurvey(for: pendingFeedback.messageID, survey: survey)
+        store.updateSurvey(for: messageID, survey: survey)
         withAnimation(.easeInOut(duration: 0.18)) {
             self.pendingFeedback = nil
+        }
+
+        guard let clip else { return }
+
+        Task {
+            let transcription = await hapTextPlayback.transcribeForDelivery(
+                fileURL: clip.fileURL,
+                duration: clip.duration
+            )
+
+            withAnimation(.hapMessageSpring) {
+                store.deliverAudio(messageID: messageID, transcription: transcription)
+            }
         }
     }
 }
@@ -794,20 +806,26 @@ private struct ReceivedHapTextAudioBubble: View {
     @ViewBuilder
     private var transcriptContent: some View {
         if presentation.status == .playing {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(previousPlaybackText)
-                    .font(.system(size: 16, weight: .regular))
-                    .foregroundStyle(Color.hapDate)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
-                    .frame(width: 263, height: 42, alignment: .topLeading)
+            VStack(alignment: .leading, spacing: 0) {
+                if previousPlaybackText.isEmpty == false {
+                    Text(previousPlaybackText)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(Color.hapDate)
+                        .lineLimit(nil)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: 263, alignment: .leading)
+                }
 
-                Text(currentPlaybackText)
-                    .font(.system(size: 32, weight: .regular))
-                    .foregroundStyle(.black)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.72)
-                    .frame(width: 263, height: 38, alignment: .leading)
+                if currentPlaybackText.isEmpty == false {
+                    Text(currentPlaybackText)
+                        .font(.system(size: 32, weight: .regular))
+                        .foregroundStyle(.black)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                        .frame(width: 263, alignment: .leading)
+                        .frame(minHeight: 34, alignment: .leading)
+                }
             }
             .frame(width: 263, alignment: .leading)
             .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .topLeading)))
