@@ -10,6 +10,16 @@ const DISPLAY_NAMES = {
   gonzalo: "Gonzalo",
 };
 
+const IOS_BUNDLE_ID = "com.loveyourhaptics.app.haptext";
+
+function redactedToken(token) {
+  if (typeof token !== "string" || token.length < 14) {
+    return "invalid-token";
+  }
+
+  return `${token.slice(0, 8)}...${token.slice(-6)}`;
+}
+
 exports.sendHapTextMessagePush = onDocumentCreated(
   "haptext_chats/{chatId}/messages/{messageId}",
   async (event) => {
@@ -39,12 +49,27 @@ exports.sendHapTextMessagePush = onDocumentCreated(
       .filter((token) => typeof token === "string" && token.length > 0 && token !== senderPushToken);
 
     if (tokens.length === 0) {
+      console.log("HapText push skipped: no recipient tokens", {
+        chatId: event.params.chatId,
+        messageId: event.params.messageId,
+        senderID,
+        recipientID,
+        registeredTokenDocs: snapshot.size,
+      });
       return;
     }
 
     const isAudio = message.type === "audio";
     const body = isAudio ? "Audio message" : String(message.text || "");
     const title = DISPLAY_NAMES[senderID];
+
+    console.log("HapText push sending", {
+      chatId: event.params.chatId,
+      messageId: event.params.messageId,
+      senderID,
+      recipientID,
+      tokenCount: tokens.length,
+    });
 
     const response = await getMessaging().sendEachForMulticast({
       tokens,
@@ -54,6 +79,7 @@ exports.sendHapTextMessagePush = onDocumentCreated(
       },
       apns: {
         headers: {
+          "apns-topic": IOS_BUNDLE_ID,
           "apns-push-type": "alert",
           "apns-priority": "10",
         },
@@ -84,9 +110,24 @@ exports.sendHapTextMessagePush = onDocumentCreated(
         ) {
           staleTokens.push(tokens[index]);
         } else {
-          console.error("HapText push failed", code, sendResponse.error?.message);
+          console.error("HapText push failed", {
+            code,
+            message: sendResponse.error?.message,
+            token: redactedToken(tokens[index]),
+            chatId: event.params.chatId,
+            messageId: event.params.messageId,
+            recipientID,
+          });
         }
       }
+    });
+
+    console.log("HapText push result", {
+      chatId: event.params.chatId,
+      messageId: event.params.messageId,
+      successCount: response.successCount,
+      failureCount: response.failureCount,
+      staleTokenCount: staleTokens.length,
     });
 
     await Promise.all(
