@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isHapTextUser(userId) {
+      return userId in ['ameena', 'gonzalo'];
+    }
+
+    match /haptext_chats/{chatId}/messages/{messageId} {
+      allow read, write: if chatId == 'ameena_gonzalo';
+    }
+
+    match /haptext_users/{userId}/notification_tokens/{tokenId} {
+      allow read, write: if isHapTextUser(userId);
+    }
+  }
+}

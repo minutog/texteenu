@@ -6,13 +6,35 @@
 	objectVersion = 90;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1A34910D2FE5E2660070D137 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 1A34910C2FE5E2660070D137 /* GoogleService-Info.plist */; };
+		1A3491102FE5F3A00070D137 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = 1A34910F2FE5F3A00070D137 /* FirebaseCore */; };
+		1A3491122FE5F3A00070D137 /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 1A3491112FE5F3A00070D137 /* FirebaseFirestore */; };
+		1A3491142FE5F3A00070D137 /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 1A3491132FE5F3A00070D137 /* FirebaseStorage */; };
+		1A3491162FE62A000070D137 /* FirebaseMessaging in Frameworks */ = {isa = PBXBuildFile; productRef = 1A3491152FE62A000070D137 /* FirebaseMessaging */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* HapText.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HapText.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		1A34910C2FE5E2660070D137 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		1AC5F16D2FE751FE0046FA28 /* Exceptions for "HapText" folder in "HapText" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 000000000000000100000000 /* HapText */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		000000000000000000000010 /* HapText */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				1AC5F16D2FE751FE0046FA28 /* Exceptions for "HapText" folder in "HapText" target */,
+			);
 			path = HapText;
 			sourceTree = "<group>";
 		};
@@ -22,6 +44,10 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				1A3491122FE5F3A00070D137 /* FirebaseFirestore in Frameworks */,
+				1A3491162FE62A000070D137 /* FirebaseMessaging in Frameworks */,
+				1A3491142FE5F3A00070D137 /* FirebaseStorage in Frameworks */,
+				1A3491102FE5F3A00070D137 /* FirebaseCore in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -32,6 +58,7 @@
 			children = (
 				000000000000000000000010 /* HapText */,
 				000000000000000000000020 /* Products */,
+				1A34910C2FE5E2660070D137 /* GoogleService-Info.plist */,
 			);
 			sourceTree = "<group>";
 		};
@@ -60,6 +87,12 @@
 				000000000000000000000010 /* HapText */,
 			);
 			name = HapText;
+			packageProductDependencies = (
+				1A34910F2FE5F3A00070D137 /* FirebaseCore */,
+				1A3491112FE5F3A00070D137 /* FirebaseFirestore */,
+				1A3491132FE5F3A00070D137 /* FirebaseStorage */,
+				1A3491152FE62A000070D137 /* FirebaseMessaging */,
+			);
 			productName = HapText;
 			productReference = 000000000000000000000120 /* HapText.app */;
 			productType = "com.apple.product-type.application";
@@ -88,6 +121,9 @@
 			);
 			mainGroup = 000000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				1A34910E2FE5E2E40070D137 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
 			projectDirPath = "";
@@ -102,6 +138,7 @@
 		000000000000000140000000 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
+				1A34910D2FE5E2660070D137 /* GoogleService-Info.plist in Resources */,
 			);
 		};
 /* End PBXResourcesBuildPhase section */
@@ -250,6 +287,9 @@
 		000000000000000111000000 /* Debug configuration for PBXNativeTarget "HapText" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HapText/HapText.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = HapText/HapText.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = HapText/HapText.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = LWS9XN33G8;
@@ -257,6 +297,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HapText/Info.plist;
+				INFOPLIST_KEY_FirebaseAppDelegateProxyEnabled = NO;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HapText needs microphone access to record audio messages.";
 				INFOPLIST_KEY_OPENAI_API_KEY = "$(OPENAI_API_KEY)";
 				INFOPLIST_KEY_OPENAI_TRANSCRIPTION_MODEL = "whisper-1";
@@ -270,10 +312,15 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).$(PRODUCT_NAME:identifier)";
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.loveyourhaptics.app.haptext;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphonesimulator*]" = com.loveyourhaptics.app.haptext;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.loveyourhaptics.mac.haptext;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -291,6 +338,9 @@
 		000000000000000112000000 /* Release configuration for PBXNativeTarget "HapText" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HapText/HapText.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = HapText/HapText.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = HapText/HapText.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = LWS9XN33G8;
@@ -298,6 +348,8 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = HapText/Info.plist;
+				INFOPLIST_KEY_FirebaseAppDelegateProxyEnabled = NO;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "HapText needs microphone access to record audio messages.";
 				INFOPLIST_KEY_OPENAI_API_KEY = "$(OPENAI_API_KEY)";
 				INFOPLIST_KEY_OPENAI_TRANSCRIPTION_MODEL = "whisper-1";
@@ -311,10 +363,15 @@
 				"INFOPLIST_KEY_UIStatusBarStyle[sdk=iphonesimulator*]" = UIStatusBarStyleDefault;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
 				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.6;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "devplaceholder.$(PROJECT_UNIQUE_VALUE:identifier).$(PRODUCT_NAME:identifier)";
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphoneos*]" = com.loveyourhaptics.app.haptext;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=iphonesimulator*]" = com.loveyourhaptics.app.haptext;
+				"PRODUCT_BUNDLE_IDENTIFIER[sdk=macosx*]" = com.loveyourhaptics.mac.haptext;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				SDKROOT = auto;
@@ -349,6 +406,40 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		1A34910E2FE5E2E40070D137 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.15.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		1A34910F2FE5F3A00070D137 /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A34910E2FE5E2E40070D137 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		1A3491112FE5F3A00070D137 /* FirebaseFirestore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A34910E2FE5E2E40070D137 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseFirestore;
+		};
+		1A3491132FE5F3A00070D137 /* FirebaseStorage */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A34910E2FE5E2E40070D137 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseStorage;
+		};
+		1A3491152FE62A000070D137 /* FirebaseMessaging */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1A34910E2FE5E2E40070D137 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseMessaging;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 000000000000000000000000 /* Project object */;
 }

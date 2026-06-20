@@ -56,6 +56,7 @@ struct HapTextMessagePresentation: Equatable {
 @MainActor
 final class HapTextMessagePlaybackController: ObservableObject {
     @Published private var presentations: [UUID: HapTextMessagePresentation] = [:]
+    @Published private(set) var activePlaybackMessageID: UUID?
 
     private let transcriptionService = HapTextOpenAITranscriptionService(
         apiClient: HapTextOpenAIAPIClient(configurationProvider: HapTextBundleOpenAIConfigurationProvider())
@@ -64,8 +65,12 @@ final class HapTextMessagePlaybackController: ObservableObject {
     private let hapticService = HapTextContinuousEnvelopeHapticService()
 
     private var preparationTasks: [UUID: Task<HapTextTranscriptionResult, Never>] = [:]
-    private var activeMessageID: UUID?
     private var playbackTimer: Timer?
+
+    private var activeMessageID: UUID? {
+        get { activePlaybackMessageID }
+        set { activePlaybackMessageID = newValue }
+    }
 
     func presentation(for messageID: UUID, duration: TimeInterval) -> HapTextMessagePresentation {
         presentations[messageID] ?? .initial(duration: duration)
@@ -293,7 +298,18 @@ final class HapTextMessagePlaybackController: ObservableObject {
         presentations[messageID] = finishedPresentation
 
         stopPlaybackServices()
-        activeMessageID = nil
+        clearFinishedActiveMessageAfterLayout(messageID)
+    }
+
+    private func clearFinishedActiveMessageAfterLayout(_ messageID: UUID) {
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard let self,
+                  self.activeMessageID == messageID,
+                  self.presentations[messageID]?.status == .finished else { return }
+
+            self.activeMessageID = nil
+        }
     }
 
     private func stopActivePlayback(resetActiveMessage: Bool) {
@@ -388,6 +404,20 @@ private enum HapTextOpenAIAPIError: LocalizedError {
     case invalidJSONObject
     case requestFailed(statusCode: Int, message: String)
     case unsupportedAudioFormat(String)
+}
+
+private enum HapTextOpenAITranscriptionError: LocalizedError {
+    case missingWordTimestamps
+    case unsupportedWordTimestampModel(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingWordTimestamps:
+            return "The transcription response did not include word-level timestamps."
+        case .unsupportedWordTimestampModel(let model):
+            return "Word-level timestamps for recorded files require whisper-1. \(model) does not support timestamp_granularities[]=word on the audio transcriptions endpoint."
+        }
+    }
 }
 
 private final class HapTextOpenAIAPIClient: @unchecked Sendable {
@@ -505,6 +535,10 @@ private struct HapTextOpenAITranscriptionService: Sendable {
 
     func transcribeAudio(at fileURL: URL) async throws -> HapTextTranscriptionResult {
         let configuration = try apiClient.loadConfiguration()
+        guard configuration.transcriptionModel == "whisper-1" else {
+            throw HapTextOpenAITranscriptionError.unsupportedWordTimestampModel(configuration.transcriptionModel)
+        }
+
         let fileData = try Data(contentsOf: fileURL)
         let audioFormat = try HapTextOpenAIAudioFormat(fileURL: fileURL)
 
@@ -522,12 +556,16 @@ private struct HapTextOpenAITranscriptionService: Sendable {
 
         let responseData = try await apiClient.postMultipart(path: "v1/audio/transcriptions", body: multipartBody)
         let response = try JSONDecoder().decode(HapTextVerboseTranscriptionResponse.self, from: responseData)
-        let words = response.words ?? []
+        let words = Self.makeWordTokens(from: response.words ?? [])
+        guard words.isEmpty == false else {
+            throw HapTextOpenAITranscriptionError.missingWordTimestamps
+        }
+
         let fullText = response.text.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return HapTextTranscriptionResult(
             fullText: fullText,
-            words: Self.makeWordTokens(from: words)
+            words: words
         )
     }
 

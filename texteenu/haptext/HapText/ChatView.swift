@@ -18,7 +18,7 @@ struct ChatView: View {
     @EnvironmentObject private var store: ChatStore
     @Environment(\.dismiss) private var dismiss
 
-    let viewer: ChatEndpoint
+    let route: ChatRoute
 
     @State private var activeViewer: ChatEndpoint
     @StateObject private var recorder = AudioCaptureController()
@@ -31,17 +31,17 @@ struct ChatView: View {
     @State private var chatGlobalMinY: CGFloat = 0
     @State private var fixedHeaderBaselineY: CGFloat?
 
-    init(viewer: ChatEndpoint) {
-        self.viewer = viewer
-        _activeViewer = State(initialValue: viewer)
+    init(route: ChatRoute) {
+        self.route = route
+        _activeViewer = State(initialValue: route.user)
     }
 
     private var messages: [ChatMessage] {
-        store.messages
-            .filter { message in
-                message.sender == activeViewer || message.isVisibleToReceiver
-            }
-            .sorted { $0.date < $1.date }
+        store.messages.sorted { $0.date < $1.date }
+    }
+
+    private var activeContact: ChatEndpoint {
+        activeViewer == route.user ? route.contact : route.user
     }
 
     private var transcriptTop: CGFloat {
@@ -116,7 +116,7 @@ struct ChatView: View {
                 chatInteractionLayer
 
                 ChatHeaderView(
-                    viewer: activeViewer,
+                    contact: activeContact,
                     onBack: { dismiss() },
                     onToggleViewer: switchViewer
                 )
@@ -154,6 +154,9 @@ struct ChatView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         #endif
+        .onAppear {
+            store.openConversation(between: route.user, and: route.contact)
+        }
     }
 
     @ViewBuilder
@@ -244,7 +247,7 @@ struct ChatView: View {
         hapTextPlayback.stop()
 
         withAnimation(.easeInOut(duration: 0.18)) {
-            activeViewer = activeViewer.peer
+            activeViewer = activeContact
         }
     }
 
@@ -254,7 +257,7 @@ struct ChatView: View {
 
         withAnimation(.hapMessageSpring) {
             draftText = ""
-            store.sendText(from: activeViewer, text: text)
+            store.sendText(from: activeViewer, to: activeContact, text: text)
         }
     }
 
@@ -265,6 +268,7 @@ struct ChatView: View {
             let message = withAnimation(.hapMessageSpring) {
                 store.sendAudio(
                     from: activeViewer,
+                    to: activeContact,
                     recording: recording,
                     isVisibleToReceiver: false
                 )
@@ -332,14 +336,14 @@ private enum FeedbackStep: Equatable {
 }
 
 private struct ChatHeaderView: View {
-    let viewer: ChatEndpoint
+    let contact: ChatEndpoint
     let onBack: () -> Void
     let onToggleViewer: () -> Void
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Button(action: onToggleViewer) {
-                ProfileAvatarView(size: 60)
+                ProfileAvatarView(user: contact, size: 60)
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
@@ -347,7 +351,7 @@ private struct ChatHeaderView: View {
             .accessibilityLabel("Switch chat")
 
             Button(action: onToggleViewer) {
-                Text(viewer.displayName)
+                Text(contact.displayName)
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(.black)
                     .lineLimit(1)
@@ -383,6 +387,9 @@ private struct TranscriptView: View {
     @ObservedObject var hapTextPlayback: HapTextMessagePlaybackController
     let bottomContentInset: CGFloat
 
+    @GestureState private var timestampRevealOffset: CGFloat = 0
+    @State private var suppressPlaybackAutoPinUntil = Date.distantPast
+
     private let bottomAnchorID = "TranscriptBottomAnchor"
 
     var body: some View {
@@ -403,7 +410,8 @@ private struct TranscriptView: View {
                                 viewer: viewer,
                                 playback: playback,
                                 hapTextPlayback: hapTextPlayback,
-                                showsTail: showsTail
+                                showsTail: showsTail,
+                                timestampRevealOffset: timestampRevealOffset
                             )
                             .padding(.bottom, showsTail ? 5 : 0)
                             .transition(.asymmetric(
@@ -430,11 +438,16 @@ private struct TranscriptView: View {
                 .scrollDismissesKeyboard(.interactively)
                 #endif
                 .simultaneousGesture(keyboardDismissDrag)
+                .simultaneousGesture(userScrollTrackingDrag)
+                .simultaneousGesture(timestampRevealDrag)
                 .onAppear {
                     scrollToLatest(proxy)
                 }
                 .onChange(of: messages.count) { _, _ in
                     scrollToLatest(proxy)
+                }
+                .onReceive(hapTextPlayback.objectWillChange) { _ in
+                    keepPlaybackBubbleAnchored(proxy)
                 }
             }
         }
@@ -466,15 +479,56 @@ private struct TranscriptView: View {
         }
     }
 
+    private func keepPlaybackBubbleAnchored(_ proxy: ScrollViewProxy) {
+        guard suppressPlaybackAutoPinUntil <= Date() else { return }
+
+        DispatchQueue.main.async {
+            guard let activeID = hapTextPlayback.activePlaybackMessageID else { return }
+            proxy.scrollTo(activeID, anchor: .bottom)
+        }
+    }
+
+    private var userScrollTrackingDrag: some Gesture {
+        DragGesture(minimumDistance: 8, coordinateSpace: .local)
+            .onChanged { value in
+                guard isMostlyVertical(value.translation) else { return }
+                suppressPlaybackAutoPinUntil = Date().addingTimeInterval(1.4)
+            }
+            .onEnded { value in
+                guard isMostlyVertical(value.translation) else { return }
+                suppressPlaybackAutoPinUntil = Date().addingTimeInterval(1.4)
+            }
+    }
+
     private var keyboardDismissDrag: some Gesture {
         DragGesture(minimumDistance: 8, coordinateSpace: .local)
             .onChanged { value in
                 let isPullingDown = value.translation.height > 10
-                let isMostlyVertical = abs(value.translation.height) > abs(value.translation.width) * 1.2
+                let mostlyVertical = isMostlyVertical(value.translation)
 
-                guard isPullingDown, isMostlyVertical else { return }
+                guard isPullingDown, mostlyVertical else { return }
                 KeyboardDismissal.dismiss()
             }
+    }
+
+    private var timestampRevealDrag: some Gesture {
+        DragGesture(minimumDistance: 12, coordinateSpace: .local)
+            .updating($timestampRevealOffset) { value, state, _ in
+                let horizontalDistance = -value.translation.width
+                let isMovingLeft = horizontalDistance > 0
+                let isMostlyHorizontal = horizontalDistance > abs(value.translation.height) * 1.15
+
+                guard isMovingLeft, isMostlyHorizontal else {
+                    state = 0
+                    return
+                }
+
+                state = min(horizontalDistance, 78)
+            }
+    }
+
+    private func isMostlyVertical(_ translation: CGSize) -> Bool {
+        abs(translation.height) > abs(translation.width) * 1.2
     }
 }
 
@@ -503,37 +557,71 @@ private struct MessageBubbleRow: View {
     @ObservedObject var playback: AudioPlaybackController
     @ObservedObject var hapTextPlayback: HapTextMessagePlaybackController
     let showsTail: Bool
+    let timestampRevealOffset: CGFloat
 
     private var isOutgoing: Bool {
         message.sender == viewer
     }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 0) {
-            if isOutgoing {
-                Spacer(minLength: 0)
-            }
+        ZStack(alignment: .trailing) {
+            MessageTimestampLabel(date: message.date, revealOffset: timestampRevealOffset)
 
-            switch message.content {
-            case .text(let text):
-                TextMessageBubble(text: text, isOutgoing: isOutgoing, showsTail: showsTail)
-            case .audio(let clip):
-                AudioMessageBubble(
-                    id: message.id,
-                    clip: clip,
-                    isOutgoing: isOutgoing,
-                    playback: playback,
-                    hapTextPlayback: hapTextPlayback,
-                    showsTail: showsTail
-                )
-            }
+            HStack(alignment: .bottom, spacing: 0) {
+                if isOutgoing {
+                    Spacer(minLength: 0)
+                }
 
-            if isOutgoing == false {
-                Spacer(minLength: 0)
+                switch message.content {
+                case .text(let text):
+                    TextMessageBubble(text: text, isOutgoing: isOutgoing, showsTail: showsTail)
+                case .audio(let clip):
+                    AudioMessageBubble(
+                        id: message.id,
+                        clip: clip,
+                        isOutgoing: isOutgoing,
+                        playback: playback,
+                        hapTextPlayback: hapTextPlayback,
+                        showsTail: showsTail
+                    )
+                }
+
+                if isOutgoing == false {
+                    Spacer(minLength: 0)
+                }
             }
+            .offset(x: -timestampRevealOffset)
         }
         .frame(width: 374)
+        .animation(.hapMessageSpring, value: timestampRevealOffset)
     }
+}
+
+private struct MessageTimestampLabel: View {
+    let date: Date
+    let revealOffset: CGFloat
+
+    var body: some View {
+        Text(Self.formatter.string(from: date))
+            .font(.system(size: 13, weight: .regular))
+            .foregroundStyle(Color.hapDate)
+            .monospacedDigit()
+            .lineLimit(1)
+            .frame(width: 68, alignment: .trailing)
+            .opacity(timestampOpacity)
+            .accessibilityHidden(revealOffset == 0)
+    }
+
+    private var timestampOpacity: Double {
+        Double(min(max((revealOffset - 16) / 38, 0), 1))
+    }
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "h:mm a"
+        return formatter
+    }()
 }
 
 private struct TextMessageBubble: View {
@@ -666,9 +754,15 @@ private struct AudioMessageBubble: View {
                         .frame(width: 44, height: 44)
                         .contentShape(Circle())
 
-                    WaveformView(
+                    AudioProgressWaveform(
                         samples: AudioWaveformExtractor.resampled(clip.samples, targetSampleCount: 42),
-                        color: isOutgoing ? Color.white.opacity(0.9) : Color.hapBubbleBlue
+                        color: isOutgoing ? Color.white.opacity(0.9) : Color.hapBubbleBlue,
+                        indicatorColor: isOutgoing ? .white : Color.hapBubbleBlue,
+                        progress: playback.progress(for: id, duration: clip.duration),
+                        isScrubbable: isPlaying,
+                        onSeek: { progress in
+                            playback.seek(messageID: id, duration: clip.duration, to: progress)
+                        }
                     )
                     .frame(width: 166, height: 42)
 
@@ -701,6 +795,59 @@ private struct AudioMessageBubble: View {
         }
 
         return isOutgoing ? "white_play" : "play"
+    }
+}
+
+private struct AudioProgressWaveform: View {
+    let samples: [Double]
+    let color: Color
+    let indicatorColor: Color
+    let progress: Double
+    let isScrubbable: Bool
+    let onSeek: (Double) -> Void
+
+    var body: some View {
+        GeometryReader { proxy in
+            let markerSize: CGFloat = 11
+            let width = max(proxy.size.width, markerSize)
+            let markerX = min(max(CGFloat(progress) * width, markerSize / 2), width - markerSize / 2)
+
+            applyScrubbing(
+                to: ZStack(alignment: .leading) {
+                    WaveformView(samples: samples, color: color)
+
+                    if isScrubbable {
+                        Circle()
+                            .fill(indicatorColor)
+                            .frame(width: markerSize, height: markerSize)
+                            .overlay {
+                                Circle()
+                                    .stroke(Color.white.opacity(0.72), lineWidth: 1.2)
+                            }
+                            .shadow(color: Color.black.opacity(0.18), radius: 1.4, x: 0, y: 0.6)
+                            .position(x: markerX, y: proxy.size.height / 2)
+                    }
+                }
+                .contentShape(Rectangle()),
+                width: width
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func applyScrubbing<Content: View>(to content: Content, width: CGFloat) -> some View {
+        if isScrubbable {
+            content.highPriorityGesture(scrubGesture(width: width))
+        } else {
+            content
+        }
+    }
+
+    private func scrubGesture(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+            .onChanged { value in
+                onSeek(Double(min(max(value.location.x / max(width, 1), 0), 1)))
+            }
     }
 }
 
@@ -759,26 +906,7 @@ private struct ReceivedHapTextAudioBubble: View {
                 controller.togglePlayback(messageID: id, clip: clip)
             } label: {
                 VStack(alignment: .leading, spacing: hasTranscript ? 7 : 0) {
-                    HStack(spacing: 9) {
-                        TintedAssetIcon(name: topIconName, color: Color.hapDate, size: 25)
-                            .frame(width: 29, height: 31)
-
-                        if let topLabel {
-                            Text(topLabel)
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(Color.hapDate)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.82)
-                        }
-
-                        Spacer(minLength: 8)
-
-                        Text(durationString(displayedDuration))
-                            .font(.system(size: 20, weight: .semibold))
-                            .monospacedDigit()
-                            .foregroundStyle(Color.hapDate)
-                    }
-                    .frame(width: 263, height: 31, alignment: .center)
+                    playbackControls
 
                     if hasTranscript {
                         transcriptContent
@@ -803,6 +931,30 @@ private struct ReceivedHapTextAudioBubble: View {
         .animation(.easeOut(duration: 0.14), value: presentation.currentTokenID)
     }
 
+    private var playbackControls: some View {
+        HStack(spacing: 11) {
+            TintedAssetIcon(name: topIconName, color: Color.hapDate, size: 31)
+                .frame(width: 44, height: 44)
+
+            if let topLabel {
+                Text(topLabel)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundStyle(Color.hapDate)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+            }
+
+            Spacer(minLength: 8)
+
+            Text(durationString(displayedDuration))
+                .font(.system(size: 17, weight: .regular))
+                .monospacedDigit()
+                .foregroundStyle(Color.hapDate)
+                .frame(width: 46, height: 42, alignment: .center)
+        }
+        .frame(width: 263, height: 42, alignment: .center)
+    }
+
     @ViewBuilder
     private var transcriptContent: some View {
         if presentation.status == .playing {
@@ -817,18 +969,17 @@ private struct ReceivedHapTextAudioBubble: View {
                         .frame(width: 263, alignment: .leading)
                 }
 
-                if currentPlaybackText.isEmpty == false {
-                    Text(currentPlaybackText)
-                        .font(.system(size: 32, weight: .regular))
-                        .foregroundStyle(.black)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.72)
-                        .frame(width: 263, alignment: .leading)
-                        .frame(minHeight: 34, alignment: .leading)
-                }
+                Text(currentPlaybackText.isEmpty ? " " : currentPlaybackText)
+                    .font(.system(size: 32, weight: .regular))
+                    .foregroundStyle(.black)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .frame(width: 263, alignment: .leading)
+                    .frame(minHeight: 34, alignment: .leading)
+                    .opacity(currentPlaybackText.isEmpty ? 0 : 1)
             }
-            .frame(width: 263, alignment: .leading)
-            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .topLeading)))
+            .frame(width: 263, alignment: .bottomLeading)
+            .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottomLeading)))
         } else {
             Text(finishedTranscriptText)
                 .font(.system(size: 16, weight: .regular))
@@ -837,7 +988,8 @@ private struct ReceivedHapTextAudioBubble: View {
                 .lineLimit(nil)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(width: 263, alignment: .leading)
-                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .topLeading)))
+                .frame(minHeight: 34, alignment: .leading)
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: .bottomLeading)))
         }
     }
 
@@ -1032,7 +1184,8 @@ private struct FeedbackOverlayView: View {
                     viewer: viewer,
                     playback: playback,
                     hapTextPlayback: hapTextPlayback,
-                    showsTail: true
+                    showsTail: true,
+                    timestampRevealOffset: 0
                 )
                 .position(x: 201, y: focusedMessageY)
                 .zIndex(1)

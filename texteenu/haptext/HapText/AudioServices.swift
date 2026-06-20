@@ -188,6 +188,7 @@ final class AudioCaptureController: ObservableObject {
 @MainActor
 final class AudioPlaybackController: ObservableObject {
     @Published private(set) var playingMessageID: UUID?
+    @Published private(set) var elapsed: TimeInterval = 0
 
     private var player: AVAudioPlayer?
     private var playbackTimer: Timer?
@@ -204,7 +205,23 @@ final class AudioPlaybackController: ObservableObject {
         player?.stop()
         player = nil
         playingMessageID = nil
+        elapsed = 0
         stopTimer()
+    }
+
+    func progress(for messageID: UUID, duration: TimeInterval) -> Double {
+        guard playingMessageID == messageID, duration > 0 else { return 0 }
+        return min(max(elapsed / duration, 0), 1)
+    }
+
+    func seek(messageID: UUID, duration: TimeInterval, to progress: Double) {
+        guard playingMessageID == messageID, let player else { return }
+
+        let clampedProgress = min(max(progress, 0), 1)
+        let targetDuration = player.duration > 0 ? player.duration : duration
+        let targetTime = clampedProgress * max(targetDuration, 0)
+        player.currentTime = targetTime
+        elapsed = targetTime
     }
 
     private func play(messageID: UUID, url: URL) {
@@ -216,6 +233,7 @@ final class AudioPlaybackController: ObservableObject {
 
             self.player = player
             playingMessageID = messageID
+            elapsed = 0
             startTimer()
         } catch {
             stop()
@@ -228,7 +246,14 @@ final class AudioPlaybackController: ObservableObject {
         let timer = Timer(timeInterval: 0.08, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                if self.player?.isPlaying != true {
+                guard let player = self.player else {
+                    self.stop()
+                    return
+                }
+
+                self.elapsed = player.currentTime
+
+                if player.isPlaying != true {
                     self.stop()
                 }
             }

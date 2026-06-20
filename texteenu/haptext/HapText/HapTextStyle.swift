@@ -50,10 +50,11 @@ struct FigmaPhoneFrame<Content: View>: View {
 }
 
 struct ProfileAvatarView: View {
+    var user: ChatEndpoint = .gonzalo
     var size: CGFloat = 60
 
     var body: some View {
-        BundlePNGImage(name: "profile")
+        BundlePNGImage(name: user.avatarImageName)
             .scaledToFill()
             .frame(width: size, height: size)
             .clipShape(Circle())

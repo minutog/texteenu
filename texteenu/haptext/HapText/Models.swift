@@ -1,27 +1,55 @@
 import Foundation
 
 enum ChatEndpoint: String, CaseIterable, Identifiable, Hashable {
-    case chatA
-    case chatB
+    case ameena
+    case gonzalo
+
+    static let chatHistoryVersion = 2
 
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
-        case .chatA:
-            return "Chat A"
-        case .chatB:
-            return "Chat B"
+        case .ameena:
+            return "Ameena"
+        case .gonzalo:
+            return "Gonzalo"
         }
     }
 
     var peer: ChatEndpoint {
         switch self {
-        case .chatA:
-            return .chatB
-        case .chatB:
-            return .chatA
+        case .ameena:
+            return .gonzalo
+        case .gonzalo:
+            return .ameena
         }
+    }
+
+    static func contacts(excluding user: ChatEndpoint) -> [ChatEndpoint] {
+        allCases.filter { $0 != user }
+    }
+
+    func conversationID(with contact: ChatEndpoint) -> String {
+        [rawValue, contact.rawValue].sorted().joined(separator: "_")
+    }
+
+    var avatarImageName: String {
+        switch self {
+        case .ameena:
+            return "ameena_profile"
+        case .gonzalo:
+            return "profile"
+        }
+    }
+}
+
+struct ChatRoute: Identifiable, Hashable {
+    let user: ChatEndpoint
+    let contact: ChatEndpoint
+
+    var id: String {
+        "\(user.rawValue)-\(contact.rawValue)"
     }
 }
 
@@ -88,6 +116,7 @@ enum MessageContent: Equatable {
 struct ChatMessage: Identifiable, Equatable {
     let id: UUID
     let sender: ChatEndpoint
+    let recipient: ChatEndpoint
     let date: Date
     var content: MessageContent
     var isVisibleToReceiver: Bool
@@ -95,12 +124,14 @@ struct ChatMessage: Identifiable, Equatable {
     init(
         id: UUID = UUID(),
         sender: ChatEndpoint,
+        recipient: ChatEndpoint,
         date: Date = Date(),
         content: MessageContent,
         isVisibleToReceiver: Bool = true
     ) {
         self.id = id
         self.sender = sender
+        self.recipient = recipient
         self.date = date
         self.content = content
         self.isVisibleToReceiver = isVisibleToReceiver
