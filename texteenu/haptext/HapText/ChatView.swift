@@ -96,11 +96,11 @@ struct ChatView: View {
 
     private var keyboardLift: CGFloat {
         #if os(iOS)
-        guard keyboard.height > 0 else { return 0 }
-
         let scale = max(phoneFrameScale, 0.001)
         let contentBottomY = chatGlobalMinY + 874 * scale
         let overlap = max(0, contentBottomY - keyboard.topY)
+        guard overlap > 0 else { return 0 }
+
         return overlap / scale
         #else
         return 0
@@ -120,6 +120,13 @@ struct ChatView: View {
     var body: some View {
         FigmaPhoneFrame {
             ZStack(alignment: .topLeading) {
+                #if os(iOS)
+                KeyboardFrameProbe(keyboard: keyboard)
+                    .frame(width: 402, height: 874)
+                    .allowsHitTesting(false)
+                    .zIndex(-1)
+                #endif
+
                 chatInteractionLayer
 
                 ChatHeaderFadeView()
@@ -1454,6 +1461,105 @@ private struct FeedbackOptionButton: View {
     }
 }
 
+#if os(iOS)
+private struct KeyboardFrameProbe: UIViewRepresentable {
+    @ObservedObject var keyboard: KeyboardState
+
+    func makeUIView(context: Context) -> KeyboardFrameProbeView {
+        let view = KeyboardFrameProbeView()
+        view.onFrameChange = { [weak keyboard] topY, screenHeight in
+            Task { @MainActor in
+                keyboard?.syncMeasuredFrame(topY: topY, screenHeight: screenHeight)
+            }
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: KeyboardFrameProbeView, context: Context) {
+        uiView.onFrameChange = { [weak keyboard] topY, screenHeight in
+            Task { @MainActor in
+                keyboard?.syncMeasuredFrame(topY: topY, screenHeight: screenHeight)
+            }
+        }
+        uiView.setNeedsLayout()
+    }
+}
+
+private final class KeyboardFrameProbeView: UIView {
+    var onFrameChange: ((CGFloat, CGFloat) -> Void)?
+
+    private var displayLink: CADisplayLink?
+    private var lastTopY: CGFloat = .greatestFiniteMagnitude
+    private var lastScreenHeight: CGFloat = .greatestFiniteMagnitude
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .clear
+        isOpaque = false
+        isUserInteractionEnabled = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        nil
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+
+        if window == nil {
+            stopDisplayLink()
+        } else {
+            startDisplayLink()
+            reportKeyboardFrame()
+        }
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        reportKeyboardFrame()
+    }
+
+    private func startDisplayLink() {
+        guard displayLink == nil else { return }
+
+        let link = CADisplayLink(target: self, selector: #selector(displayLinkDidTick))
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    private func stopDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    @objc private func displayLinkDidTick() {
+        reportKeyboardFrame()
+    }
+
+    private func reportKeyboardFrame() {
+        guard let window, bounds.isEmpty == false else { return }
+
+        let guideFrame = keyboardLayoutGuide.layoutFrame
+        let localTopY = guideFrame == .zero ? bounds.maxY : guideFrame.minY
+        let windowPoint = convert(CGPoint(x: bounds.midX, y: localTopY), to: window)
+        let screenTopY = window.frame.minY + windowPoint.y
+        let screenHeight = window.screen.bounds.height
+
+        guard screenTopY.isFinite, screenHeight.isFinite else { return }
+        guard abs(screenTopY - lastTopY) > 0.5 || abs(screenHeight - lastScreenHeight) > 0.5 else { return }
+
+        lastTopY = screenTopY
+        lastScreenHeight = screenHeight
+        onFrameChange?(screenTopY, screenHeight)
+    }
+
+    deinit {
+        stopDisplayLink()
+    }
+}
+#endif
+
 @MainActor
 private final class KeyboardState: ObservableObject {
     @Published var height: CGFloat = 0
@@ -1497,6 +1603,23 @@ private final class KeyboardState: ObservableObject {
                 }
             }
         )
+    }
+
+    func syncMeasuredFrame(topY: CGFloat, screenHeight: CGFloat) {
+        let topY = min(max(topY, 0), screenHeight)
+        let height = max(0, screenHeight - topY)
+
+        guard abs(topY - self.topY) > 0.5 || abs(height - self.height) > 0.5 || abs(screenHeight - self.screenHeight) > 0.5 else {
+            return
+        }
+
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            self.screenHeight = screenHeight
+            self.topY = topY
+            self.height = height
+        }
     }
 
     private func apply(height: CGFloat, topY: CGFloat, screenHeight: CGFloat, from notification: Notification) {
