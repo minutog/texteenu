@@ -63,7 +63,7 @@ struct ChatView: View {
 
     private var keyboardComposerClearance: CGFloat {
         #if os(iOS)
-        keyboard.height > 380 ? 34 : 12
+        keyboard.height > 380 ? 10 : 6
         #else
         0
         #endif
@@ -111,13 +111,20 @@ struct ChatView: View {
     }
 
     private var transcriptInputClearance: CGFloat {
-        30
+        12
     }
 
     var body: some View {
         FigmaPhoneFrame {
             ZStack(alignment: .topLeading) {
                 chatInteractionLayer
+
+                ChatHeaderFadeView()
+                    .offset(y: fixedHeaderCompensation)
+                    .animation(nil, value: keyboardLift)
+                    .animation(nil, value: fixedHeaderCompensation)
+                    .transaction { transaction in transaction.animation = nil }
+                    .zIndex(1)
 
                 ChatHeaderView(
                     contact: activeContact,
@@ -331,6 +338,23 @@ private struct ChatGlobalMinYPreferenceKey: PreferenceKey {
     }
 }
 
+private struct ChatHeaderFadeView: View {
+    var body: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .white, location: 0),
+                .init(color: .white.opacity(0.98), location: 0.42),
+                .init(color: .white.opacity(0.62), location: 0.72),
+                .init(color: .white.opacity(0), location: 1)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+        .frame(width: 402, height: 178, alignment: .top)
+        .allowsHitTesting(false)
+    }
+}
+
 private struct PendingFeedback: Equatable {
     let messageID: UUID
     var step: FeedbackStep
@@ -464,7 +488,6 @@ private struct TranscriptView: View {
                 #if os(iOS)
                 .scrollDismissesKeyboard(.interactively)
                 #endif
-                .simultaneousGesture(keyboardDismissDrag)
                 .simultaneousGesture(userScrollTrackingDrag)
                 .simultaneousGesture(timestampRevealDrag)
                 .onAppear {
@@ -541,17 +564,6 @@ private struct TranscriptView: View {
             .onEnded { value in
                 guard isMostlyVertical(value.translation) else { return }
                 suppressPlaybackAutoPinUntil = Date().addingTimeInterval(1.4)
-            }
-    }
-
-    private var keyboardDismissDrag: some Gesture {
-        DragGesture(minimumDistance: 8, coordinateSpace: .local)
-            .onChanged { value in
-                let isPullingDown = value.translation.height > 10
-                let mostlyVertical = isMostlyVertical(value.translation)
-
-                guard isPullingDown, mostlyVertical else { return }
-                KeyboardDismissal.dismiss()
             }
     }
 
@@ -1061,19 +1073,6 @@ private struct ReceivedHapTextAudioBubble: View {
     }
 }
 
-private enum KeyboardDismissal {
-    static func dismiss() {
-        #if os(iOS)
-        UIApplication.shared.sendAction(
-            #selector(UIResponder.resignFirstResponder),
-            to: nil,
-            from: nil,
-            for: nil
-        )
-        #endif
-    }
-}
-
 private struct TextComposerView: View {
     @Binding var draftText: String
     let composerTop: CGFloat
@@ -1143,7 +1142,6 @@ private struct TextComposerView: View {
         .position(x: 201, y: composerTop + composerHeight / 2)
         .animation(.hapComposerSpring, value: isExpanded)
         .animation(.hapComposerSpring, value: hasText)
-        .animation(.hapComposerSpring, value: composerTop)
     }
 }
 
@@ -1474,11 +1472,10 @@ private final class KeyboardState: ObservableObject {
                     return
                 }
 
-                let screenHeight = max(frame.maxY, 1)
+                let screenHeight = max(UIScreen.main.bounds.height, 1)
                 let overlap = max(0, screenHeight - frame.minY)
                 Task { @MainActor [weak self] in
-                    self?.screenHeight = screenHeight
-                    self?.height = overlap
+                    self?.apply(height: overlap, screenHeight: screenHeight, from: notification)
                 }
             }
         )
@@ -1488,12 +1485,43 @@ private final class KeyboardState: ObservableObject {
                 forName: UIResponder.keyboardWillHideNotification,
                 object: nil,
                 queue: .main
-            ) { [weak self] _ in
+            ) { [weak self] notification in
                 Task { @MainActor [weak self] in
-                    self?.height = 0
+                    self?.apply(height: 0, screenHeight: max(UIScreen.main.bounds.height, 1), from: notification)
                 }
             }
         )
+    }
+
+    private func apply(height: CGFloat, screenHeight: CGFloat, from notification: Notification) {
+        let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0.22
+        let animation = Self.keyboardAnimation(from: notification, duration: duration)
+
+        if duration <= 0.02 {
+            self.screenHeight = screenHeight
+            self.height = height
+        } else {
+            withAnimation(animation) {
+                self.screenHeight = screenHeight
+                self.height = height
+            }
+        }
+    }
+
+    private static func keyboardAnimation(from notification: Notification, duration: Double) -> Animation {
+        let rawCurve = (notification.userInfo?[UIResponder.keyboardAnimationCurveUserInfoKey] as? NSNumber)?.intValue
+        let curve = rawCurve.flatMap(UIView.AnimationCurve.init(rawValue:))
+
+        switch curve {
+        case .easeIn:
+            return .easeIn(duration: duration)
+        case .easeOut:
+            return .easeOut(duration: duration)
+        case .linear:
+            return .linear(duration: duration)
+        default:
+            return .easeInOut(duration: duration)
+        }
     }
 
     deinit {
