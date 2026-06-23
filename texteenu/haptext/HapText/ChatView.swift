@@ -17,6 +17,7 @@ private extension Animation {
 struct ChatView: View {
     @EnvironmentObject private var store: ChatStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.hapPhoneFrameScale) private var phoneFrameScale
 
     let route: ChatRoute
 
@@ -63,7 +64,7 @@ struct ChatView: View {
 
     private var keyboardComposerClearance: CGFloat {
         #if os(iOS)
-        keyboard.height > 380 ? 10 : 6
+        2
         #else
         0
         #endif
@@ -97,8 +98,10 @@ struct ChatView: View {
         #if os(iOS)
         guard keyboard.height > 0 else { return 0 }
 
-        let screenHeight = max(keyboard.screenHeight, 1)
-        return min((keyboard.height / screenHeight) * 874, 344)
+        let scale = max(phoneFrameScale, 0.001)
+        let contentBottomY = chatGlobalMinY + 874 * scale
+        let overlap = max(0, contentBottomY - keyboard.topY)
+        return overlap / scale
         #else
         return 0
         #endif
@@ -1455,6 +1458,7 @@ private struct FeedbackOptionButton: View {
 private final class KeyboardState: ObservableObject {
     @Published var height: CGFloat = 0
     @Published var screenHeight: CGFloat = 874
+    @Published var topY: CGFloat = 874
 
     #if os(iOS)
     private var observers: [NSObjectProtocol] = []
@@ -1473,9 +1477,10 @@ private final class KeyboardState: ObservableObject {
                 }
 
                 let screenHeight = max(UIScreen.main.bounds.height, 1)
-                let overlap = max(0, screenHeight - frame.minY)
+                let topY = min(max(frame.minY, 0), screenHeight)
+                let overlap = max(0, screenHeight - topY)
                 Task { @MainActor [weak self] in
-                    self?.apply(height: overlap, screenHeight: screenHeight, from: notification)
+                    self?.apply(height: overlap, topY: topY, screenHeight: screenHeight, from: notification)
                 }
             }
         )
@@ -1487,23 +1492,33 @@ private final class KeyboardState: ObservableObject {
                 queue: .main
             ) { [weak self] notification in
                 Task { @MainActor [weak self] in
-                    self?.apply(height: 0, screenHeight: max(UIScreen.main.bounds.height, 1), from: notification)
+                    let screenHeight = max(UIScreen.main.bounds.height, 1)
+                    self?.apply(height: 0, topY: screenHeight, screenHeight: screenHeight, from: notification)
                 }
             }
         )
     }
 
-    private func apply(height: CGFloat, screenHeight: CGFloat, from notification: Notification) {
+    private func apply(height: CGFloat, topY: CGFloat, screenHeight: CGFloat, from notification: Notification) {
         let duration = (notification.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? NSNumber)?.doubleValue ?? 0.22
         let animation = Self.keyboardAnimation(from: notification, duration: duration)
+        let tracksVisibleKeyboardFrame = self.height > 0 && height > 0
 
-        if duration <= 0.02 {
+        func update() {
             self.screenHeight = screenHeight
+            self.topY = topY
             self.height = height
+        }
+
+        if duration <= 0.02 || tracksVisibleKeyboardFrame {
+            var transaction = Transaction()
+            transaction.animation = nil
+            withTransaction(transaction) {
+                update()
+            }
         } else {
             withAnimation(animation) {
-                self.screenHeight = screenHeight
-                self.height = height
+                update()
             }
         }
     }

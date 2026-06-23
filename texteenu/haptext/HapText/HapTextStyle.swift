@@ -15,6 +15,17 @@ extension Color {
     static let hapShadow = Color.black.opacity(0.16)
 }
 
+private struct HapPhoneFrameScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
+
+extension EnvironmentValues {
+    var hapPhoneFrameScale: CGFloat {
+        get { self[HapPhoneFrameScaleKey.self] }
+        set { self[HapPhoneFrameScaleKey.self] = newValue }
+    }
+}
+
 struct FigmaPhoneFrame<Content: View>: View {
     @ViewBuilder var content: Content
 
@@ -38,6 +49,7 @@ struct FigmaPhoneFrame<Content: View>: View {
                 content
                     .frame(width: 402, height: 874)
                     .background(Color.white)
+                    .environment(\.hapPhoneFrameScale, scale)
                     .scaleEffect(scale, anchor: scaleAnchor)
             }
             .frame(width: proxy.size.width, height: stableViewportHeight, alignment: contentAlignment)
