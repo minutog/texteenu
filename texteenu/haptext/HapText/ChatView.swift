@@ -256,8 +256,13 @@ struct ChatView: View {
         let text = draftText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.isEmpty == false else { return }
 
-        withAnimation(.hapMessageSpring) {
+        var resetTransaction = Transaction()
+        resetTransaction.animation = nil
+        withTransaction(resetTransaction) {
             draftText = ""
+        }
+
+        withAnimation(.hapMessageSpring) {
             store.sendText(from: activeViewer, to: activeContact, text: text)
         }
     }
@@ -443,14 +448,7 @@ private struct TranscriptView: View {
                                 timestampRevealOffset: timestampRevealOffset
                             )
                             .padding(.bottom, showsTail ? 5 : 0)
-                            .transition(.asymmetric(
-                                insertion: .scale(
-                                    scale: 0.84,
-                                    anchor: message.sender == viewer ? .bottomTrailing : .bottomLeading
-                                )
-                                .combined(with: .opacity),
-                                removal: .opacity
-                            ))
+                            .transition(messageInsertionTransition(for: message))
                             .id(message.id)
                         }
 
@@ -470,7 +468,7 @@ private struct TranscriptView: View {
                 .simultaneousGesture(userScrollTrackingDrag)
                 .simultaneousGesture(timestampRevealDrag)
                 .onAppear {
-                    pinLatestMessageAboveComposer(proxy, animated: false)
+                    pinLatestMessageAboveComposer(proxy)
                 }
                 .onChange(of: latestMessageLayoutKey) { _, _ in
                     pinLatestMessageAboveComposer(proxy)
@@ -479,7 +477,7 @@ private struct TranscriptView: View {
                     pinLatestMessageAboveComposer(proxy)
                 }
                 .onChange(of: viewer) { _, _ in
-                    pinLatestMessageAboveComposer(proxy, animated: false)
+                    pinLatestMessageAboveComposer(proxy)
                 }
                 .onReceive(hapTextPlayback.objectWillChange) { _ in
                     keepPlaybackBubbleAnchored(proxy)
@@ -506,16 +504,21 @@ private struct TranscriptView: View {
         return sameSender == false || sameDay == false
     }
 
-    private func pinLatestMessageAboveComposer(_ proxy: ScrollViewProxy, animated: Bool = true) {
+    private func messageInsertionTransition(for message: ChatMessage) -> AnyTransition {
+        let anchor: UnitPoint = message.sender == viewer ? .bottomTrailing : .bottomLeading
+
+        return .asymmetric(
+            insertion: .opacity
+                .combined(with: .scale(scale: 0.96, anchor: anchor))
+                .combined(with: .offset(x: 0, y: 12)),
+            removal: .opacity
+        )
+    }
+
+    private func pinLatestMessageAboveComposer(_ proxy: ScrollViewProxy) {
         for delay in scrollSettlingDelays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                if animated {
-                    withAnimation(.hapMessageSpring) {
-                        proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                    }
-                } else {
-                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                }
+                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
             }
         }
     }
