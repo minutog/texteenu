@@ -110,6 +110,10 @@ struct ChatView: View {
         return compensation.isFinite ? compensation : 0
     }
 
+    private var transcriptInputClearance: CGFloat {
+        30
+    }
+
     var body: some View {
         FigmaPhoneFrame {
             ZStack(alignment: .topLeading) {
@@ -223,11 +227,8 @@ struct ChatView: View {
     }
 
     private var bottomTranscriptInset: CGFloat {
-        if recorder.isRecording {
-            return 874 - recordingComposerTop + 25
-        }
-
-        return 874 - textComposerTop + 25
+        let composerTop = recorder.isRecording ? recordingComposerTop : textComposerTop
+        return max(0, transcriptBottom - composerTop + transcriptInputClearance)
     }
 
     private var backSwipeGesture: some Gesture {
@@ -391,6 +392,34 @@ private struct TranscriptView: View {
     @State private var suppressPlaybackAutoPinUntil = Date.distantPast
 
     private let bottomAnchorID = "TranscriptBottomAnchor"
+    private let scrollSettlingDelays: [TimeInterval] = [0, 0.05, 0.18, 0.34]
+
+    private var latestMessageLayoutKey: String {
+        guard let message = messages.last else { return "empty" }
+
+        var parts = [
+            message.id.uuidString,
+            message.sender.rawValue,
+            message.recipient.rawValue,
+            String(message.isVisibleToReceiver)
+        ]
+
+        switch message.content {
+        case .text(let text):
+            parts.append("text")
+            parts.append(String(text.count))
+            parts.append(text)
+        case .audio(let clip):
+            parts.append("audio")
+            parts.append(String(format: "%.2f", clip.duration))
+            parts.append(String(clip.samples.count))
+            parts.append(clip.transcription?.fullText ?? "")
+            parts.append(clip.survey?.sentiment.rawValue ?? "")
+            parts.append(clip.survey?.detail ?? "")
+        }
+
+        return parts.joined(separator: "|")
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -441,10 +470,16 @@ private struct TranscriptView: View {
                 .simultaneousGesture(userScrollTrackingDrag)
                 .simultaneousGesture(timestampRevealDrag)
                 .onAppear {
-                    scrollToLatest(proxy)
+                    pinLatestMessageAboveComposer(proxy, animated: false)
                 }
-                .onChange(of: messages.count) { _, _ in
-                    scrollToLatest(proxy)
+                .onChange(of: latestMessageLayoutKey) { _, _ in
+                    pinLatestMessageAboveComposer(proxy)
+                }
+                .onChange(of: bottomContentInset) { _, _ in
+                    pinLatestMessageAboveComposer(proxy)
+                }
+                .onChange(of: viewer) { _, _ in
+                    pinLatestMessageAboveComposer(proxy, animated: false)
                 }
                 .onReceive(hapTextPlayback.objectWillChange) { _ in
                     keepPlaybackBubbleAnchored(proxy)
@@ -471,10 +506,16 @@ private struct TranscriptView: View {
         return sameSender == false || sameDay == false
     }
 
-    private func scrollToLatest(_ proxy: ScrollViewProxy) {
-        DispatchQueue.main.async {
-            withAnimation(.hapMessageSpring) {
-                proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+    private func pinLatestMessageAboveComposer(_ proxy: ScrollViewProxy, animated: Bool = true) {
+        for delay in scrollSettlingDelays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if animated {
+                    withAnimation(.hapMessageSpring) {
+                        proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                    }
+                } else {
+                    proxy.scrollTo(bottomAnchorID, anchor: .bottom)
+                }
             }
         }
     }
